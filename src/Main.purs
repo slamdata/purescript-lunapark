@@ -50,6 +50,10 @@ main = void $ Aff.launchAff do
 
     DT.traceAnyA "========================================"
 
+    res5 ← AJ.delete ("http://localhost:4444/wd/hub/session/" <> sessId <> sessId)
+    DT.traceAnyA res5
+    DT.traceAnyA $ res5.response ∷ A.Json
+
     res5 ← AJ.delete ("http://localhost:4444/wd/hub/session/" <> sessId)
     DT.traceAnyA res5
     DT.traceAnyA $ res5.response ∷ A.Json
