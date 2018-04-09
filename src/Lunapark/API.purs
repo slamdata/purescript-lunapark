@@ -353,3 +353,102 @@ getPageSource = do
   r ← ask
   res ← rethrow $ LA.getPageSource r.baseURI (un LT.SessionId r.session)
   wrapEither $ J.decodeJson res
+
+executeScript ∷ ∀ m e. LunaparkConstraints e m (LT.Script → m J.Json)
+executeScript scr = do
+  r ← ask
+  rethrow $ LA.executeScript
+    r.baseURI
+    (un LT.SessionId r.session)
+    (LT.encodeScript scr)
+
+executeAsyncScript ∷ ∀ m e. LunaparkConstraints e m (LT.Script → m J.Json)
+executeAsyncScript scr = do
+  r ← ask
+  rethrow $ LA.executeAsyncScript
+    r.baseURI
+    (un LT.SessionId r.session)
+    (LT.encodeScript scr)
+
+getAllCookies ∷ ∀ m e. LunaparkConstraints e m (m (Array LT.Cookie))
+getAllCookies = do
+  r ← ask
+  res ← rethrow $ LA.getAllCookies r.baseURI $ un LT.SessionId r.session
+  wrapEither $ T.traverse LT.decodeCookie =<< J.decodeJson res
+
+getNamedCookie ∷ ∀ m e. LunaparkConstraints e m (String → m LT.Cookie)
+getNamedCookie name = do
+  r ← ask
+  res ← rethrow $ LA.getNamedCookie r.baseURI (un LT.SessionId r.session) name
+  wrapEither $ LT.decodeCookie res
+
+addCookie ∷ ∀ m e. LunaparkConstraints e m (LT.Cookie → m Unit)
+addCookie cookie = do
+  r ← ask
+  void $ rethrow $ LA.addCookie
+    r.baseURI
+    (un LT.SessionId r.session)
+    (LT.encodeCookie cookie)
+
+deleteCookie ∷ ∀ m e. LunaparkConstraints e m (String → m Unit)
+deleteCookie name = do
+  r ← ask
+  void $ rethrow $ LA.deleteCookie
+    r.baseURI
+    (un LT.SessionId r.session)
+    name
+
+deleteAllCookies ∷ ∀ m e. LunaparkConstraints e m (m Unit)
+deleteAllCookies = do
+  r ← ask
+  void $ rethrow $ LA.deleteAllCookies r.baseURI $ un LT.SessionId r.session
+
+{-
+performActions
+-}
+
+releaseActions ∷ ∀ m e. LunaparkConstraints e m (m Unit)
+releaseActions = do
+  r ← ask
+  void $ rethrow $ LA.releaseActions r.baseURI $ un LT.SessionId r.session
+
+dismissAlert ∷ ∀ m e. LunaparkConstraints e m (m Unit)
+dismissAlert = do
+  r ← ask
+  void $ rethrow $ LA.dismissAlert r.baseURI $ un LT.SessionId r.session
+
+acceptAlert ∷ ∀ m e. LunaparkConstraints e m (m Unit)
+acceptAlert = do
+  r ← ask
+  void $ rethrow $ LA.acceptAlert r.baseURI $ un LT.SessionId r.session
+
+getAlertText ∷ ∀ m e. LunaparkConstraints e m (m String)
+getAlertText = do
+  r ← ask
+  res ← rethrow $ LA.getAlertText r.baseURI $ un LT.SessionId r.session
+  wrapEither $ J.decodeJson res
+
+sendAlertText ∷ ∀ m e. LunaparkConstraints e m (String → m Unit)
+sendAlertText s = do
+  r ← ask
+  void $ rethrow $ LA.sendAlertText
+    r.baseURI
+    (un LT.SessionId r.session)
+    (LT.encodeSendKeysRequest s)
+
+takeScreenshot ∷ ∀ m e. LunaparkConstraints e m (m LT.Screenshot)
+takeScreenshot = do
+  r ← ask
+  res ← rethrow $ LA.takeScreenshot
+    r.baseURI
+    (un LT.SessionId r.session)
+  wrapEither $ LT.decodeScreenshot res
+
+takeElementScreenshot ∷ ∀ m e. LunaparkConstraints e m (LT.Element → m LT.Screenshot)
+takeElementScreenshot el = do
+  r ← ask
+  res ← rethrow LA.takeElementScreenshot
+    r.baseURI
+    (un LT.SessionId r.session)
+    (un LT.Element el)
+  wrapEither $ LT.decodeScreenshot res

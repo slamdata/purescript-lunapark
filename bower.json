@@ -5,6 +5,7 @@
     "purescript-debug": "^3.0.0",
     "purescript-codec-argonaut": "^5.0.0",
     "purescript-argonaut": "^3.1.0",
-    "purescript-css": "^3.4.0"
+    "purescript-css": "^3.4.0",
+    "purescript-node-fs-aff": "^5.0.0"
   }
 }
