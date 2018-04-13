@@ -12,6 +12,7 @@ import Network.HTTP.Affjax (AJAX)
 import Network.HTTP.Affjax as N
 import Network.HTTP.StatusCode (StatusCode(..))
 import Lunapark.Error as LE
+import Debug.Trace (traceAnyM)
 
 -- | This two type synonims are used only here
 -- | this is the lowest level of bindings this lib provides
@@ -239,4 +240,14 @@ takeScreenshot uri sessId =
 
 takeElementScreenshot ∷ ∀ e. URI → SessionId → ElementId → Aff (ajax ∷ AJAX|e) (Either LE.Error Json)
 takeElementScreenshot uri sessId elId =
-  map handleAPIError $ N.get (uri <> "/session/" <> sessId <> "/element/" <> elId <> "/screenshot")
+  map handleAPIError $ traceAnyM =<< N.get (uri <> "/session/" <> sessId <> "/element/" <> elId <> "/screenshot")
+
+-- Recomended by W3C
+isDisplayed ∷ ∀ e. URI → SessionId → ElementId → Aff (ajax ∷ AJAX|e) (Either LE.Error Json)
+isDisplayed uri sessId elId = do
+  map handleAPIError $ N.get (uri <> "/session/" <> sessId <> "/element/" <> elId <> "/displayed")
+
+-- JsonWire legacy
+getSession ∷ ∀ e. URI → SessionId → Aff (ajax ∷ AJAX|e) (Either LE.Error Json)
+getSession uri sessId =
+  map handleAPIError $ N.get (uri <> "/session/" <> sessId)

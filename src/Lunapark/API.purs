@@ -4,9 +4,11 @@ import Prelude
 
 import Control.Monad.Aff (Aff)
 import Control.Monad.Aff.Class (class MonadAff, liftAff)
-import Control.Monad.Error.Class (class MonadThrow, throwError)
-import Control.Monad.Reader.Class (class MonadAsk, ask, asks)
+import Control.Monad.Error.Class (class MonadThrow, class MonadError, throwError)
+import Control.Monad.Reader.Class (class MonadAsk, ask)
+import Control.Monad.State.Class (class MonadState)
 import Data.Argonaut as J
+import Data.Bifunctor (lmap)
 import Data.Either (Either, either)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
@@ -16,16 +18,22 @@ import Lunapark.Error as LE
 import Lunapark.Types as LT
 import Network.HTTP.Affjax (AJAX)
 
+import Debug.Trace (traceAnyM)
+
 type Config =
   { session ∷ LT.SessionId
   , baseURI ∷ String
-  , capabilities ∷ LT.Capabilities
+  , capabilities ∷ Array LT.Capability
   }
 
+type State =
+  { timeouts ∷ LT.Timeouts }
+
 type LunaparkConstraints e m a
-  = MonadThrow LE.Error m
+  = MonadError LE.Error m
   ⇒ MonadAff (ajax ∷ AJAX|e) m
   ⇒ MonadAsk Config m
+  ⇒ MonadState State m
   ⇒ a
 
 rethrow
@@ -39,19 +47,15 @@ rethrow a = liftAff a >>= either throwError pure
 wrapEither ∷ ∀ m a. MonadThrow LE.Error m ⇒ Either String a → m a
 wrapEither = either (throwError <<< LE.unknownError) pure
 
-getSession ∷ ∀ m r. MonadAsk { session ∷ LT.SessionId |r } m ⇒ m LT.SessionId
-getSession = asks _.session
-
 init
   ∷ ∀ e m
   . MonadAff (ajax ∷ AJAX|e) m
-  ⇒ MonadThrow LE.Error m
   ⇒ String
-  → LT.Capabilities
-  → m LT.CreateSessionResponse
+  → LT.CapabilitiesRequest
+  → m (Either LE.Error LT.CreateSessionResponse)
 init uri desiredCapabilities = do
-  sessObj ← rethrow $ LA.init (uri <> "/session") $ LT.encodeCapabilities desiredCapabilities
-  wrapEither $ LT.decodeCreateSessionResponse sessObj
+  sessObj ← liftAff $ LA.init uri $ LT.encodeCapabilitiesRequest desiredCapabilities
+  pure $ sessObj >>= \a → lmap LE.unknownError (LT.decodeCreateSessionResponse a)
 
 quit ∷ ∀ e m. LunaparkConstraints e m (m Unit)
 quit = do
@@ -403,9 +407,13 @@ deleteAllCookies = do
   r ← ask
   void $ rethrow $ LA.deleteAllCookies r.baseURI $ un LT.SessionId r.session
 
-{-
-performActions
--}
+performActions ∷ ∀ m e. LunaparkConstraints e m (LT.ActionRequest → m Unit)
+performActions req = do
+  r ← ask
+  void $ rethrow $ LA.performActions
+    r.baseURI
+    (un LT.SessionId r.session)
+    (LT.encodeActionRequest req)
 
 releaseActions ∷ ∀ m e. LunaparkConstraints e m (m Unit)
 releaseActions = do
@@ -447,8 +455,25 @@ takeScreenshot = do
 takeElementScreenshot ∷ ∀ m e. LunaparkConstraints e m (LT.Element → m LT.Screenshot)
 takeElementScreenshot el = do
   r ← ask
-  res ← rethrow LA.takeElementScreenshot
+  res ← rethrow $ traceAnyM =<< LA.takeElementScreenshot
     r.baseURI
     (un LT.SessionId r.session)
     (un LT.Element el)
   wrapEither $ LT.decodeScreenshot res
+
+-- Recomended by W3C
+isDisplayed ∷ ∀ m e. LunaparkConstraints e m (LT.Element → m Boolean)
+isDisplayed el = do
+  r ← ask
+  res ← rethrow $ LA.isDisplayed
+    r.baseURI
+    (un LT.SessionId r.session)
+    (un LT.Element el)
+  wrapEither $ J.decodeJson res
+
+-- JsonWire legacy
+setWireTimeouts ∷ ∀ m e. LunaparkConstraints e m (LT.Timeouts → m Unit)
+setWireTimeouts ts = do
+  r ← ask
+  T.for_ (LT.encodeLegacyTimeouts ts) \j →
+    void $ rethrow $ LA.setTimeouts r.baseURI (un LT.SessionId r.session) j

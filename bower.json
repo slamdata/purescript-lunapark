@@ -6,6 +6,8 @@
     "purescript-codec-argonaut": "^5.0.0",
     "purescript-argonaut": "^3.1.0",
     "purescript-css": "^3.4.0",
-    "purescript-node-fs-aff": "^5.0.0"
+    "purescript-node-fs-aff": "^5.0.0",
+    "purescript-node-child-process": "^4.0.0",
+    "purescript-node-process": "^5.0.0"
   }
 }
