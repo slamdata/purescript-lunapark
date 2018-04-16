@@ -18,7 +18,7 @@ import Lunapark.Error as LE
 import Lunapark.Types as LT
 import Network.HTTP.Affjax (AJAX)
 
-import Debug.Trace (traceAnyM)
+import Debug.Trace as DT
 
 type Config =
   { session ∷ LT.SessionId
@@ -413,7 +413,7 @@ performActions req = do
   void $ rethrow $ LA.performActions
     r.baseURI
     (un LT.SessionId r.session)
-    (LT.encodeActionRequest req)
+    (DT.spy $ LT.encodeActionRequest req)
 
 releaseActions ∷ ∀ m e. LunaparkConstraints e m (m Unit)
 releaseActions = do
@@ -455,7 +455,7 @@ takeScreenshot = do
 takeElementScreenshot ∷ ∀ m e. LunaparkConstraints e m (LT.Element → m LT.Screenshot)
 takeElementScreenshot el = do
   r ← ask
-  res ← rethrow $ traceAnyM =<< LA.takeElementScreenshot
+  res ← rethrow $ LA.takeElementScreenshot
     r.baseURI
     (un LT.SessionId r.session)
     (un LT.Element el)

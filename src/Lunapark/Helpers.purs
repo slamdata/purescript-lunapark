@@ -10,12 +10,15 @@ import Control.Monad.Eff.Ref as Ref
 import Control.Monad.Error.Class as EC
 import Control.Monad.State.Class as SC
 import Data.Argonaut as J
-import Data.Maybe (Maybe(..))
+import Data.FoldableWithIndex as FI
+import Data.StrMap as SM
+import Data.Symbol (SProxy(..))
+import Data.Time.Duration (Milliseconds(..))
+import Data.Variant as V
 import Lunapark.API as LA
 import Lunapark.Error as LE
 import Lunapark.Types as LT
 import Node.Buffer as B
-import Node.FS (FileFlags(W))
 import Node.FS.Aff as FS
 import Node.Path as Path
 
@@ -112,3 +115,47 @@ elementScreenshot el fp = do
  buffer ← liftEff $ B.fromString res.content res.encoding
  liftAff do
    FS.writeFile fp buffer
+
+pause ∷ ∀ e a. a → V.Variant (pause ∷ a|e)
+pause = V.inj (SProxy ∷ SProxy "pause")
+
+keyDown ∷ ∀ e a. a → V.Variant (keyDown ∷ a|e)
+keyDown = V.inj (SProxy ∷ SProxy "keyDown")
+
+keyUp ∷ ∀ e a. a → V.Variant (keyUp ∷ a|e)
+keyUp = V.inj (SProxy ∷ SProxy "keyUp")
+
+pointerUp ∷ ∀ a e. a → V.Variant (pointerUp ∷ a|e)
+pointerUp = V.inj (SProxy ∷ SProxy "pointerUp")
+
+pointerDown ∷ ∀ a e. a → V.Variant (pointerDown ∷ a|e)
+pointerDown = V.inj (SProxy ∷ SProxy "pointerDown")
+
+pointerMove ∷ ∀ a e. a → V.Variant (pointerMove ∷ a|e)
+pointerMove = V.inj (SProxy ∷ SProxy "pointerMove")
+
+click ∷ LT.Button → _ --LT.ActionSequence
+click btn =
+  [ pointerDown btn
+  , pointerUp btn
+  ]
+
+leftClick ∷ _ -- LT.ActionSequence
+leftClick = click LT.LeftBtn
+
+rightClick ∷ _ --LT.ActionSequence
+rightClick = click LT.RightBtn
+
+doubleClick ∷ _ -- LT.ActionSequence
+doubleClick = LT.Pointer LT.Mouse
+  [ pointerDown LT.LeftBtn
+  , pointerUp LT.LeftBtn
+  , pointerDown LT.LeftBtn
+  , pointerUp LT.LeftBtn
+  ]
+
+moveToElement ∷ LT.Element → LT.PointerMove
+moveToElement el =  { duration: Milliseconds 100.0, origin: LT.FromElement el, x: 0, y: 0 }
+
+performActions ∷ ∀ f s e m. Show s ⇒ FI.FoldableWithIndex s f ⇒ LA.LunaparkConstraints e m (f LT.ActionSequence → m Unit)
+performActions fs = LA.performActions $ FI.foldlWithIndex (\i acc a → SM.insert (show i) a acc) SM.empty fs

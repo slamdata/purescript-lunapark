@@ -23,7 +23,7 @@ start drivers jarPath additionalParams = do
   preparedJar ← liftAff $ FS.realpath jarPath
   preparedDrivers ← liftAff $ T.traverse FS.realpath drivers
 
-  liftEff $ CP.execFile
+  liftEff $ CP.exec
     ("java "
      <> T.intercalate " " (LT.renderDriverPaths preparedDrivers)
      <> " -jar " <> preparedJar <> " "

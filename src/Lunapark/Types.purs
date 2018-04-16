@@ -270,8 +270,8 @@ type PointerMove =
   , y ∷ Int
   }
 
-encodePointerMove ∷ PointerMove → Json
-encodePointerMove r = J.encodeJson $ SM.fromFoldable
+encodePointerMove ∷ PointerMove → SM.StrMap Json
+encodePointerMove r = SM.fromFoldable
   [ Tuple "x" $ J.encodeJson r.x
   , Tuple "y" $ J.encodeJson r.y
   , Tuple "duration" $ J.encodeJson $ un Milliseconds r.duration
@@ -290,12 +290,33 @@ type Action = V.Variant
 
 encodeAction ∷ Action → Json
 encodeAction = V.match
-  { pause: \ms → J.encodeJson $ SM.singleton "duration" $ J.encodeJson $ un Milliseconds ms
-  , keyDown: \ch → J.encodeJson $ SM.singleton "value" $ J.encodeJson ch
-  , keyUp: \ch → J.encodeJson $ SM.singleton "value" $ J.encodeJson ch
-  , pointerUp: \btn → J.encodeJson $ SM.singleton "button" $ encodeButton btn
-  , pointerDown: \btn → J.encodeJson $ SM.singleton "button" $ encodeButton btn
-  , pointerMove: encodePointerMove
+  { pause: \ms →
+     J.encodeJson $ SM.fromFoldable
+       [ Tuple "duration" $ J.encodeJson $ un Milliseconds ms
+       , Tuple "type" $ J.encodeJson "pause"
+       ]
+  , keyDown: \ch →
+     J.encodeJson $ SM.fromFoldable
+       [ Tuple "value" $ J.encodeJson ch
+       , Tuple "type" $ J.encodeJson "keyDown"
+       ]
+  , keyUp: \ch →
+     J.encodeJson $ SM.fromFoldable
+       [ Tuple "value" $ J.encodeJson ch
+       , Tuple "type" $ J.encodeJson "keyUp"
+       ]
+  , pointerUp: \btn →
+     J.encodeJson $ SM.fromFoldable
+       [ Tuple "button" $ encodeButton btn
+       , Tuple "type" $ J.encodeJson "pointerUp"
+       ]
+  , pointerDown: \btn →
+     J.encodeJson $ SM.fromFoldable
+       [ Tuple "button" $ encodeButton btn
+       , Tuple "type" $ J.encodeJson "pointerDown"
+       ]
+  , pointerMove: \pm →
+     J.encodeJson $ SM.insert "type" (J.encodeJson "pointerMove") $ encodePointerMove pm
   }
 
 
