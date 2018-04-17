@@ -1,5 +1,5 @@
 module Lunapark.Helpers where
-
+{-
 import Prelude
 
 import CSS as CSS
@@ -159,3 +159,4 @@ moveToElement el =  { duration: Milliseconds 100.0, origin: LT.FromElement el, x
 
 performActions ∷ ∀ f s e m. Show s ⇒ FI.FoldableWithIndex s f ⇒ LA.LunaparkConstraints e m (f LT.ActionSequence → m Unit)
 performActions fs = LA.performActions $ FI.foldlWithIndex (\i acc a → SM.insert (show i) a acc) SM.empty fs
+-}

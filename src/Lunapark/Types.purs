@@ -28,6 +28,9 @@ derive instance newtypeSessionId ∷ Newtype SessionId _
 newtype WindowHandle = WindowHandle String
 derive instance newtypeWindowHandle ∷ Newtype WindowHandle _
 
+currentWindow ∷ WindowHandle
+currentWindow = WindowHandle "current"
+
 data FrameId = ByElementId String | ByIndex Int | TopFrame
 
 newtype Element = Element String
@@ -123,6 +126,22 @@ decodeRectangle = J.decodeJson >=> \obj → do
   x ← obj .? "x"
   y ← obj .? "y"
   pure { width, height, x, y }
+
+decodeRectangleLegacy ∷ { size ∷ Json, position ∷ Json }  → Either String Rectangle
+decodeRectangleLegacy { size, position } = do
+  sobj ← J.decodeJson size
+  pobj ← J.decodeJson position
+  x ← pobj .? "x"
+  y ← pobj .? "y"
+  width ← sobj .? "width"
+  height ← sobj .? "height"
+  pure { width, height, x, y }
+
+encodeRectangleLegacy ∷ Rectangle → { size ∷ Json, position ∷ Json }
+encodeRectangleLegacy r =
+  { size: J.encodeJson $ SM.fromFoldable [ Tuple "width" r.width, Tuple "height" r.height ]
+  , position: J.encodeJson $ SM.fromFoldable [ Tuple "x" r.x, Tuple "y" r.y ]
+  }
 
 encodeRectangle ∷ Rectangle → Json
 encodeRectangle r = J.encodeJson $ SM.fromFoldable

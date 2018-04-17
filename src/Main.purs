@@ -41,7 +41,24 @@ defaultTimeouts =
   , implicit: wrap 0.0
   , script: wrap 30000.0
   }
-
+main ∷ Eff _ Unit
+main = void $ Aff.launchAff do
+  interpret ← LA.init "http://localhost:4444/wd/hub" { alwaysMatch: [], firstMatch: [ [ LT.BrowserName LT.Chrome ] ] }
+  res ← interpret do
+    st ← LA.status
+    DT.traceAnyA "status"
+    DT.traceAnyA st
+    ts ← LA.getTimeouts
+    DT.traceAnyA "timeouts"
+    DT.traceAnyA ts
+    LA.setTimeouts ts{ pageLoad = wrap 10.0 }
+    ts' ← LA.getTimeouts
+    DT.traceAnyA "timeouts'"
+    DT.traceAnyA ts'
+    LA.setTimeouts ts
+    LA.quit
+  DT.traceAnyA res
+{-
 main ∷ Eff _ Unit
 main = void $ Aff.launchAff do
 --  LS.start (Map.singleton LT.Firefox "gk.exe") "selenium-3.11.0.jar" [ "-port", "5555" ]
@@ -82,3 +99,4 @@ main = void $ Aff.launchAff do
 
   where
   byAriaLabel value = LT.ByCss $ CSS.fromString $ "[aria-label='" <> value <> "']"
+-}

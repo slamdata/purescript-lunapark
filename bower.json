@@ -8,6 +8,8 @@
     "purescript-css": "^3.4.0",
     "purescript-node-fs-aff": "^5.0.0",
     "purescript-node-child-process": "^4.0.0",
-    "purescript-node-process": "^5.0.0"
+    "purescript-node-process": "^5.0.0",
+    "purescript-free": "^4.3.0",
+    "purescript-run": "^1.0.1"
   }
 }

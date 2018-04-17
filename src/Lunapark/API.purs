@@ -4,19 +4,356 @@ import Prelude
 
 import Control.Monad.Aff (Aff)
 import Control.Monad.Aff.Class (class MonadAff, liftAff)
+import Control.Monad.Eff.Ref as Ref
 import Control.Monad.Error.Class (class MonadThrow, class MonadError, throwError)
 import Control.Monad.Reader.Class (class MonadAsk, ask)
 import Control.Monad.State.Class (class MonadState)
+import Control.Monad.Rec.Class (class MonadRec)
+import Control.Monad.Free (Free, foldFree)
+import Data.Time.Duration (Milliseconds(..))
 import Data.Argonaut as J
 import Data.Bifunctor (lmap)
-import Data.Either (Either, either)
+import Data.Either (Either(..), either)
+import Data.List (List(..), (:))
 import Data.Maybe (Maybe(..))
-import Data.Newtype (un)
+import Data.Map as Map
+import Data.Newtype (class Newtype, un, wrap)
 import Data.Traversable as T
+import Data.Symbol (SProxy(..))
+import Data.StrMap as SM
 import Lunapark.Affjax as LA
 import Lunapark.Error as LE
 import Lunapark.Types as LT
+import Lunapark.Endpoint as LP
 import Network.HTTP.Affjax (AJAX)
+import Unsafe.Coerce (unsafeCoerce)
+import Run as R
+import Run.Except (EXCEPT, runExcept, throw)
+import Run.Except as RE
+import Debug.Trace as DT
+import Unsafe.Coerce (unsafeCoerce)
+
+type LunaparkEffects e =
+  ( ajax ∷ AJAX
+  , ref ∷ Ref.REF
+  | e)
+
+-- | Example
+-- | ```purescript
+-- | runLunapark ← init "http://localhost:4444/wd/hub" SM.empty
+-- | result ← runLunapark do
+-- |   setTimeouts timeouts
+-- |   go "http://google.com"
+-- |   findElement ...
+-- | ```
+init
+  ∷ ∀ e m a
+  . MonadAff (LunaparkEffects e) m
+  ⇒ MonadRec m
+  ⇒ String
+  → LT.CapabilitiesRequest
+  → m (Lunapark e a → m (Either LE.Error a))
+init uri caps = do
+  sessObj ← liftAff $ LP.post uri (LP.Session : Nil) $ LT.encodeCapabilitiesRequest caps
+  case lmap LE.unknownError <<< LT.decodeCreateSessionResponse =<< sessObj of
+    Left e → pure \_ → pure $ Left e
+    Right a → pure \actions → liftAff $ interpret uri a actions
+
+interpret ∷ ∀ a e. String → LT.CreateSessionResponse → Lunapark e a → Aff (LunaparkEffects e) (Either LE.Error a)
+interpret uri {session, capabilities} actions = do
+  id
+  --expandEffectRows
+    $ R.runBaseAff'
+    $ runExcept
+    $ runLunapark uri session capabilities
+    $ un Lunapark actions
+--  where
+  -- This is definitely safe, because more effects is not less effects
+--  expandEffectRows ∷ ∀ m r0 r1 r. Union r0 r1 r ⇒ m r0 ~> m r
+--  expandEffectRows = unsafeCoerce
+
+data LunaparkF a
+  = Quit a
+  | Status (LT.ServerStatus → a)
+  | GetTimeouts (LT.Timeouts → a)
+  | SetTimeouts LT.Timeouts a
+  | GoTo String a
+  | GetUrl (String → a)
+  | Forward a
+  | Back a
+  | Refresh a
+  | GetTitle (String → a)
+  | GetWindowHandle (LT.WindowHandle → a)
+  | GetWindowHandles (Array LT.WindowHandle → a)
+  | CloseWindow a
+  | SwitchToWindow LT.WindowHandle a
+  | SwitchToFrame LT.FrameId a
+  | SwitchToParentFrame a
+  | GetWindowRectangle (LT.Rectangle → a)
+  | SetWindowRectangle LT.Rectangle a
+  | MaximizeWindow a
+  | MinimizeWindow a
+  | FullscreenWindow a
+
+derive instance functorLunaparkF ∷ Functor LunaparkF
+
+type BaseRun r e = R.Run
+  ( except ∷ EXCEPT LE.Error
+  , aff ∷ R.AFF (LunaparkEffects e)
+  , eff ∷ R.EFF (LunaparkEffects e)
+  | r)
+type RunLunapark e = BaseRun (lunapark ∷ LUNAPARK) e
+
+newtype Lunapark e a = Lunapark (RunLunapark e a)
+
+_lunapark = SProxy ∷ SProxy "lunapark"
+type LUNAPARK = R.FProxy LunaparkF
+
+liftLunapark ∷ ∀ a e. LunaparkF a → Lunapark e a
+liftLunapark = Lunapark <<< R.lift _lunapark
+
+derive instance newtypeLunapark ∷ Newtype (Lunapark e a) _
+derive newtype instance functorLunapark ∷ Functor (Lunapark e)
+derive newtype instance applyLunapark ∷ Apply (Lunapark e)
+derive newtype instance applicativeLunapark ∷ Applicative (Lunapark e)
+derive newtype instance bindLunapark ∷ Bind (Lunapark e)
+derive newtype instance monadLunapark ∷ Monad (Lunapark e)
+
+quit ∷ ∀ e. Lunapark e Unit
+quit = liftLunapark $ Quit unit
+
+status ∷ ∀ e. Lunapark e LT.ServerStatus
+status = liftLunapark $ Status id
+
+setTimeouts ∷ ∀ e. LT.Timeouts → Lunapark e Unit
+setTimeouts ts = liftLunapark $ SetTimeouts ts unit
+
+getTimeouts ∷ ∀ e. Lunapark e LT.Timeouts
+getTimeouts = liftLunapark $ GetTimeouts id
+
+go ∷ ∀ e. String → Lunapark e Unit
+go uri = liftLunapark $ GoTo uri unit
+
+getUrl ∷ ∀ e. Lunapark e String
+getUrl = liftLunapark $ GetUrl id
+
+forward ∷ ∀ e. Lunapark e Unit
+forward = liftLunapark $ Forward unit
+
+back ∷ ∀ e. Lunapark e Unit
+back = liftLunapark $ Back unit
+
+refresh ∷ ∀ e. Lunapark e Unit
+refresh = liftLunapark $ Refresh unit
+
+getTitle ∷ ∀ e. Lunapark e String
+getTitle = liftLunapark $ GetTitle id
+
+getWindowHandle ∷ ∀ e. Lunapark e LT.WindowHandle
+getWindowHandle = liftLunapark $ GetWindowHandle id
+
+getWindowHandles ∷ ∀ e. Lunapark e (Array LT.WindowHandle)
+getWindowHandles = liftLunapark $ GetWindowHandles id
+
+closeWindow ∷ ∀ e. Lunapark e Unit
+closeWindow = liftLunapark $ CloseWindow unit
+
+switchToWindow ∷ ∀ e. LT.WindowHandle → Lunapark e Unit
+switchToWindow w = liftLunapark $ SwitchToWindow w unit
+
+switchToFrame ∷ ∀ e. LT.FrameId → Lunapark e Unit
+switchToFrame f = liftLunapark $ SwitchToFrame f unit
+
+switchToParentFrame ∷ ∀ e. Lunapark e Unit
+switchToParentFrame = liftLunapark $ SwitchToParentFrame unit
+
+getWindowRectangle ∷ ∀ e. Lunapark e LT.Rectangle
+getWindowRectangle = liftLunapark $ GetWindowRectangle id
+
+setWindowRectangle ∷ ∀ e. LT.Rectangle → Lunapark e Unit
+setWindowRectangle r = liftLunapark $ SetWindowRectangle r unit
+
+maximizeWindow ∷ ∀ e. Lunapark e Unit
+maximizeWindow = liftLunapark $ MaximizeWindow unit
+
+minimizeWindow ∷ ∀ e. Lunapark e Unit
+minimizeWindow = liftLunapark $ MinimizeWindow unit
+
+fullscreenWindow ∷ ∀ e. Lunapark e Unit
+fullscreenWindow = liftLunapark $ FullscreenWindow unit
+
+runLunapark ∷ ∀ e. String → LT.SessionId → Array LT.Capability → RunLunapark e ~> BaseRun () e
+runLunapark uri session capabilities a = do
+  timeoutsRef ←
+    R.liftEff $ Ref.newRef
+      { implicit: Milliseconds 0.0
+      , pageLoad: Milliseconds 300000.0
+      , script: Milliseconds 30000.0
+      }
+  requestMapRef ← R.liftEff $ Ref.newRef Map.empty
+  let input =
+        { timeoutsRef
+        , requestMapRef
+        , uri
+        , session
+        , capabilities
+        }
+  R.interpretRec (R.on _lunapark (handleLunapark input) R.send) a
+
+type HandleLunaparkInput =
+  { session ∷ LT.SessionId
+  , timeoutsRef ∷ Ref.Ref LT.Timeouts
+  , requestMapRef ∷ Ref.Ref (Map.Map String Boolean)
+  , uri ∷ String
+  , capabilities ∷ Array LT.Capability
+  }
+
+handleLunapark ∷ ∀ e. HandleLunaparkInput → LunaparkF ~> BaseRun () e
+handleLunapark inp = case _ of
+  Quit next → do
+    _ ← delete $ inSession : Nil
+    pure next
+  Status cont → do
+    res ← get $ LP.Status : Nil
+    ss ← throwLeft $ LT.decodeServerStatus res
+    pure $ cont ss
+  GetTimeouts cont → do
+    res ← R.liftEff $ Ref.readRef inp.timeoutsRef
+    pure $ cont res
+  SetTimeouts ts next → do
+    R.liftEff $ Ref.writeRef inp.timeoutsRef ts
+    withFallback "set timeouts"
+      { w3c: void $ post (inSession : LP.Timeouts : Nil) (LT.encodeTimeouts ts)
+      , jsonWire: do
+           T.for_ (LT.encodeLegacyTimeouts ts) \j →
+             void $ post (inSession : LP.Timeouts : Nil) j
+      }
+    pure next
+  GoTo uri next → do
+    _ ← post (inSession : LP.Url : Nil) $ LT.encodeGoRequest uri
+    pure next
+  GetUrl cont → do
+    res ← get $ inSession : LP.Url : Nil
+    map cont $ throwLeft $ J.decodeJson res
+  Back next → do
+    _ ← post_ (inSession : LP.Back : Nil)
+    pure next
+  Forward next → do
+    _ ← post_ (inSession : LP.Forward : Nil)
+    pure next
+  Refresh next → do
+    _ ← post_ (inSession : LP.Refresh : Nil)
+    pure next
+  GetTitle cont → do
+    res ← get (inSession : LP.Title : Nil)
+    map cont $ throwLeft $ J.decodeJson res
+  GetWindowHandle cont → do
+    res ← withFallback "get window handle"
+      { w3c: get (inSession : LP.Window : Nil)
+      , jsonWire: get (inSession : LP.WindowHandle : Nil)
+      }
+    map cont $ throwLeft $ LT.decodeWindowHandle res
+  GetWindowHandles cont → do
+    res ← withFallback "get window handles"
+      { w3c: get (inSession : LP.Window : LP.Handles : Nil)
+      , jsonWire: get (inSession : LP.WindowHandles : Nil)
+      }
+    map cont $ throwLeft $ T.traverse LT.decodeWindowHandle =<< J.decodeJson res
+  CloseWindow next → do
+    _ ← delete (inSession : LP.Window : Nil)
+    pure next
+  SwitchToWindow w next → do
+    _ ← post (inSession : LP.Window : Nil) (LT.encodeSwitchToWindowRequest w)
+    pure next
+  SwitchToFrame fid next → do
+    _ ← post (inSession : LP.Frame : Nil) (LT.encodeFrameId fid)
+    pure next
+  SwitchToParentFrame next → do
+    _ ← post_ (inSession : LP.Frame : LP.Parent : Nil)
+    pure next
+  GetWindowRectangle cont → do
+    res ← withFallback "get window rectangle"
+      { w3c: do
+           res ← get (inSession : LP.Window : LP.Rect : Nil)
+           throwLeft $ LT.decodeRectangle res
+      , jsonWire: do
+           position ← get (inSession : LP.Window : LP.Position : Nil)
+           size ← get (inSession : LP.Window : LP.Size : Nil)
+           throwLeft $ LT.decodeRectangleLegacy { position, size }
+      }
+    pure $ cont res
+  SetWindowRectangle r next → do
+    withFallback "set window rectangle"
+      { w3c: do
+           void $ post (inSession : LP.Window : LP.Rect : Nil) (LT.encodeRectangle r)
+      , jsonWire: do
+           let js = LT.encodeRectangleLegacy r
+           _ ← post (inSession : LP.Window : LP.Size : Nil) js.size
+           void $ post (inSession : LP.Window : LP.Position : Nil) js.position
+      }
+    pure next
+  MaximizeWindow next → do
+    _ ← post_ (inSession : LP.Window : LP.Maximize : Nil)
+    pure next
+  MinimizeWindow next → do
+    _ ← post_ (inSession : LP.Window : LP.Minimize : Nil)
+    pure next
+  FullscreenWindow next → do
+    _ ← post_ (inSession : LP.Window : LP.Fullscreen : Nil)
+    pure next
+
+  where
+  delete a = liftAndRethrow $ LP.delete inp.uri a
+  post a b = liftAndRethrow $ LP.post inp.uri a b
+  get a = liftAndRethrow $ LP.get inp.uri a
+  post_ a = liftAndRethrow $ LP.post_ inp.uri a
+
+  withFallback ∷ ∀ a. String → { w3c ∷ BaseRun () e a, jsonWire ∷ BaseRun () e a } → BaseRun () e a
+  withFallback key { w3c: try, jsonWire: fallback } = do
+    mp ← R.liftEff $ Ref.readRef inp.requestMapRef
+    case DT.spy $ Map.lookup key mp of
+      Just true → try
+      Just false → fallback
+      Nothing →
+        let
+          try' = do
+            a ← try
+            R.liftEff $ Ref.modifyRef inp.requestMapRef (Map.insert key true)
+            pure a
+          fallback' = do
+            a ← fallback
+            R.liftEff $ Ref.modifyRef inp.requestMapRef (Map.insert key false)
+            pure a
+        in catch try' \_ → fallback'
+
+  inSession ∷ LP.EndpointPart
+  inSession = LP.InSession inp.session
+
+  liftAndRethrow ∷ ∀ e ω. Aff (LunaparkEffects e) (Either LE.Error ω) → BaseRun () e ω
+  liftAndRethrow a = do
+    res ← R.liftAff a
+    RE.rethrow res
+
+  throwLeft ∷ ∀ ω. Either String ω → BaseRun () e ω
+  throwLeft = RE.rethrow <<< lmap LE.unknownError
+
+-- Safe, since we actually want handler and result have same rows not, remove except
+catch ∷ ∀ e r a. R.Run (except ∷ EXCEPT e|r) a → (e → R.Run (except ∷ EXCEPT e|r) a) → R.Run (except ∷ EXCEPT e|r) a
+catch = unsafeCoerce $ flip RE.catch
+
+
+--interpret ∷ ∀ e. LunaparkF ~> Aff (ajax ∷ AJAX|e)
+--interpret = unsafeCoerce
+
+
+{-
+import Prelude
+
+
+
+
+
+
 
 import Debug.Trace as DT
 
@@ -477,3 +814,4 @@ setWireTimeouts ts = do
   r ← ask
   T.for_ (LT.encodeLegacyTimeouts ts) \j →
     void $ rethrow $ LA.setTimeouts r.baseURI (un LT.SessionId r.session) j
+-}
