@@ -25,6 +25,8 @@ import Lunapark.Affjax as LA
 import Lunapark.Error as LE
 import Lunapark.Types as LT
 import Lunapark.Endpoint as LP
+import Node.Buffer as B
+import Node.FS.Aff as FS
 import Network.HTTP.Affjax (AJAX)
 import Unsafe.Coerce (unsafeCoerce)
 import Run as R
@@ -36,6 +38,8 @@ import Unsafe.Coerce (unsafeCoerce)
 type LunaparkEffects e =
   ( ajax ∷ AJAX
   , ref ∷ Ref.REF
+  , buffer ∷ B.BUFFER
+  , fs ∷ FS.FS
   | e)
 
 -- | Example
@@ -94,6 +98,23 @@ data LunaparkF a
   | MaximizeWindow a
   | MinimizeWindow a
   | FullscreenWindow a
+  | ExecuteScript LT.Script (J.Json → a)
+  | ExecuteScriptAsync LT.Script (J.Json → a)
+  | GetAllCookies (Array LT.Cookie → a)
+  | GetCookie String (LT.Cookie → a)
+  | DeleteCookie String a
+  | DeleteAllCookies a
+  | AddCookie LT.Cookie a
+  | DismissAlert a
+  | AcceptAlert a
+  | GetAlertText (String → a)
+  | SendAlertText String a
+  | Screenshot String a
+  | ElementScreenshot LT.Element String a
+  | FindElement LT.Locator (LT.Element → a)
+  | FindElements LT.Locator (Array LT.Element → a)
+  | FindElementInElement LT.Element LT.Locator (LT.Element → a)
+  | FindElementsInElement LT.Element LT.Locator (Array LT.Element → a)
 
 derive instance functorLunaparkF ∷ Functor LunaparkF
 
@@ -102,6 +123,7 @@ type BaseRun r e = R.Run
   , aff ∷ R.AFF (LunaparkEffects e)
   , eff ∷ R.EFF (LunaparkEffects e)
   | r)
+
 type RunLunapark e = BaseRun (lunapark ∷ LUNAPARK) e
 
 newtype Lunapark e a = Lunapark (RunLunapark e a)
@@ -181,6 +203,57 @@ minimizeWindow = liftLunapark $ MinimizeWindow unit
 
 fullscreenWindow ∷ ∀ e. Lunapark e Unit
 fullscreenWindow = liftLunapark $ FullscreenWindow unit
+
+executeScript ∷ ∀ e. LT.Script → Lunapark e J.Json
+executeScript script = liftLunapark $ ExecuteScript script id
+
+executeScriptAsync ∷ ∀ e. LT.Script → Lunapark e J.Json
+executeScriptAsync script = liftLunapark $ ExecuteScriptAsync script id
+
+getAllCookies ∷ ∀ e. Lunapark e (Array LT.Cookie)
+getAllCookies = liftLunapark $ GetAllCookies id
+
+getCookie ∷ ∀ e. String → Lunapark e LT.Cookie
+getCookie name = liftLunapark $ GetCookie name id
+
+addCookie ∷ ∀ e. LT.Cookie → Lunapark e Unit
+addCookie cookie = liftLunapark $ AddCookie cookie unit
+
+deleteCookie ∷ ∀ e. String → Lunapark e Unit
+deleteCookie name = liftLunapark $ DeleteCookie name unit
+
+deleteAllCookies ∷ ∀ e. Lunapark e Unit
+deleteAllCookies = liftLunapark $ DeleteAllCookies unit
+
+dismissAlert ∷ ∀ e. Lunapark e Unit
+dismissAlert = liftLunapark $ DismissAlert unit
+
+acceptAlert ∷ ∀ e. Lunapark e Unit
+acceptAlert = liftLunapark $ AcceptAlert unit
+
+getAlertText ∷ ∀ e. Lunapark e String
+getAlertText = liftLunapark $ GetAlertText id
+
+sendAlertText ∷ ∀ e. String → Lunapark e Unit
+sendAlertText txt = liftLunapark $ SendAlertText txt unit
+
+screenshot ∷ ∀ e. String → Lunapark e Unit
+screenshot fp = liftLunapark $ Screenshot fp unit
+
+elementScreenshot ∷ ∀ e. LT.Element → String → Lunapark e Unit
+elementScreenshot el fp = liftLunapark $ ElementScreenshot el fp unit
+
+findElement ∷ ∀ e. LT.Locator → Lunapark e LT.Element
+findElement l = liftLunapark $ FindElement l id
+
+findElements ∷ ∀ e. LT.Locator → Lunapark e (Array LT.Element)
+findElements l = liftLunapark $ FindElements l id
+
+findElementInElement ∷ ∀ e. LT.Element → LT.Locator → Lunapark e LT.Element
+findElementInElement el l = liftLunapark $ FindElementInElement el l id
+
+findElementsInElement ∷ ∀ e. LT.Element → LT.Locator → Lunapark e (Array LT.Element)
+findElementsInElement el l = liftLunapark $ FindElementsInElement el l id
 
 runLunapark ∷ ∀ e. String → LT.SessionId → Array LT.Capability → RunLunapark e ~> BaseRun () e
 runLunapark uri session capabilities a = do
@@ -301,6 +374,79 @@ handleLunapark inp = case _ of
   FullscreenWindow next → do
     _ ← post_ (inSession : LP.Window : LP.Fullscreen : Nil)
     pure next
+  ExecuteScript script cont → do
+    map cont $ withFallback "execute script"
+      { w3c: post (inSession : LP.Execute : LP.Sync : Nil) (LT.encodeScript script)
+      , jsonWire: post (inSession : LP.Execute : Nil) (LT.encodeScript script)
+      }
+  ExecuteScriptAsync script cont → do
+    map cont $ withFallback "execute script async"
+      { w3c: post (inSession : LP.Execute : LP.Async : Nil) (LT.encodeScript script)
+      , jsonWire: post (inSession : LP.ExecuteAsync : Nil) (LT.encodeScript script)
+      }
+  GetAllCookies cont → do
+    res ← get (inSession : LP.Cookies : Nil)
+    map cont $ throwLeft $ T.traverse LT.decodeCookie =<< J.decodeJson res
+  GetCookie name cont → do
+    res ← get (inSession : LP.Cookie name : Nil)
+    map cont $ throwLeft $ LT.decodeCookie res
+  DeleteAllCookies next → do
+    _ ← delete (inSession : LP.Cookies : Nil)
+    pure next
+  DeleteCookie name next → do
+    _ ← delete (inSession : LP.Cookie name : Nil)
+    pure next
+  AddCookie cookie next → do
+    _ ← post (inSession : LP.Cookies : Nil) (LT.encodeCookie cookie)
+    pure next
+  DismissAlert next → do
+    _ ← withFallback "dismiss alert"
+      { w3c: post_ (inSession : LP.Alert : LP.Dismiss : Nil)
+      , jsonWire: post_ (inSession : LP.DismissAlert : Nil)
+      }
+    pure next
+  AcceptAlert next → do
+    _ ← withFallback "accept alert"
+      { w3c: post_ (inSession : LP.Alert : LP.Accept : Nil)
+      , jsonWire: post_ (inSession : LP.AcceptAlert : Nil)
+      }
+    pure next
+  GetAlertText cont → do
+    res ← withFallback "get alert text"
+      { w3c: get (inSession : LP.Alert : LP.Text : Nil)
+      , jsonWire: get (inSession : LP.AlertText : Nil)
+      }
+    map cont $ throwLeft $ J.decodeJson res
+  SendAlertText str next → do
+    _ ← withFallback "send alert text"
+      { w3c: post (inSession : LP.Alert : LP.Text : Nil) (LT.encodeSendKeysRequest str)
+      , jsonWire: post (inSession : LP.AlertText : Nil) (LT.encodeSendKeysRequest str)
+      }
+    pure next
+  Screenshot fp next → do
+    res ← get (inSession : LP.Screenshot : Nil)
+    screenshotPack ← throwLeft $ LT.decodeScreenshot res
+    buffer ← R.liftEff $ B.fromString screenshotPack.content screenshotPack.encoding
+    R.liftAff $ FS.writeFile fp buffer
+    pure next
+  ElementScreenshot el fp next → do
+    res ← get (inSession : LP.InElement el : LP.Screenshot : Nil)
+    screenshotPack ← throwLeft $ LT.decodeScreenshot res
+    buffer ← R.liftEff $ B.fromString screenshotPack.content screenshotPack.encoding
+    R.liftAff $ FS.writeFile fp buffer
+    pure next
+  FindElement loc cont → do
+    res ← post (inSession : LP.Element : Nil) (LT.encodeLocator loc)
+    map cont $ throwLeft $ LT.decodeElement res
+  FindElements loc cont → do
+    res ← post (inSession : LP.Elements : Nil) (LT.encodeLocator loc)
+    map cont $ throwLeft $ T.traverse LT.decodeElement =<< J.decodeJson res
+  FindElementInElement el loc cont → do
+    res ← post (inSession : LP.InElement el : LP.Element : Nil) (LT.encodeLocator loc)
+    map cont $ throwLeft $ LT.decodeElement res
+  FindElementsInElement el loc cont → do
+    res ← post (inSession : LP.InElement el : LP.Elements : Nil) (LT.encodeLocator loc)
+    map cont $ throwLeft $ T.traverse LT.decodeElement =<< J.decodeJson res
 
   where
   delete a = liftAndRethrow $ LP.delete inp.uri a
