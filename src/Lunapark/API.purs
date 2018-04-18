@@ -122,7 +122,7 @@ data ElementF a
   | ClearEl a
   | SendKeys String a
   | ScreenshotEl String a
-  | IsVisible (Boolean → a)
+  | IsDisplayed (Boolean → a)
   | Submit a
 
 derive instance functorLunaparkF ∷ Functor LunaparkF
@@ -289,8 +289,8 @@ clearElement el = liftLunapark $ OnElement el $ ClearEl unit
 sendKeysElement ∷ ∀ e r. LT.Element → String → Lunapark e r Unit
 sendKeysElement el txt = liftLunapark $ OnElement el $ SendKeys txt unit
 
-isVisible ∷ ∀ e r. LT.Element → Lunapark e r Boolean
-isVisible el = liftLunapark $ OnElement el $ IsVisible id
+isDisplayed ∷ ∀ e r. LT.Element → Lunapark e r Boolean
+isDisplayed el = liftLunapark $ OnElement el $ IsDisplayed id
 
 submitElement ∷ ∀ e r. LT.Element → Lunapark e r Unit
 submitElement el = liftLunapark $ OnElement el $ Submit unit
@@ -501,8 +501,6 @@ handleLunapark inp = case _ of
         map cont $ throwLeft $ J.decodeJson res
       GetProperty prop cont → do
         map cont $ get (inSession : inElement : LP.Property prop : Nil)
---        either RE.throw (pure <<< cont) res
---        map cont $ RE.rethrow res
       GetCss css cont → do
         res ← get (inSession : inElement : LP.CssValue css : Nil)
         map cont $ throwLeft $ J.decodeJson res
@@ -512,9 +510,16 @@ handleLunapark inp = case _ of
       GetTagName cont → do
         res ← get (inSession : inElement : LP.Name : Nil)
         map cont $ throwLeft $ J.decodeJson res
-      GetRectangle cont → do
-        res ← get (inSession : inElement : LP.Rect : Nil)
-        map cont $ throwLeft $ LT.decodeRectangle res
+      GetRectangle cont →
+        map cont $ withFallback "get element rectangle"
+          { w3c: do
+             res ← get (inSession : inElement : LP.Rect : Nil)
+             throwLeft $ LT.decodeRectangle res
+          , jsonWire: do
+             position ← get (inSession : inElement : LP.Position : Nil)
+             size ← get (inSession : inElement : LP.Size : Nil)
+             throwLeft $ LT.decodeRectangleLegacy { position, size }
+          }
       IsEnabled cont → do
         res ← get (inSession : inElement : LP.Enabled : Nil)
         map cont $ throwLeft $ J.decodeJson res
@@ -527,8 +532,16 @@ handleLunapark inp = case _ of
       SendKeys txt next → do
         _ ← post (inSession : inElement : LP.Value : Nil) (LT.encodeSendKeysRequest txt)
         pure next
-      IsVisible cont → do
-        res ← get (inSession : inElement : LP.Displayed : Nil)
+      IsDisplayed cont → do
+        res ← withFallback "is element displayed"
+          { w3c: get (inSession : inElement : LP.Displayed : Nil)
+          , jsonWire: do
+               let script =
+                     { script: """var el = arguments[0]; return el.offsetHeight > 0 && el.offsetWidth > 0"""
+                     , args: [ LT.encodeElement el ]
+                     }
+               handleLunapark inp $ ExecuteScript script id
+          }
         map cont $ throwLeft $ J.decodeJson res
       Submit next → do
         _ ← post_ (inSession : inElement : LP.Submit : Nil)
@@ -544,7 +557,7 @@ handleLunapark inp = case _ of
   withFallback ∷ ∀ a. String → { w3c ∷ BaseRun r e a, jsonWire ∷ BaseRun r e a } → BaseRun r e a
   withFallback key { w3c: try, jsonWire: fallback } = do
     mp ← R.liftEff $ Ref.readRef inp.requestMapRef
-    case DT.spy $ Map.lookup key mp of
+    case Map.lookup key mp of
       Just true → try
       Just false → fallback
       Nothing →
