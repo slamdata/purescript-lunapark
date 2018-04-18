@@ -5,35 +5,29 @@ import Prelude
 import Control.Monad.Aff (Aff)
 import Control.Monad.Aff.Class (class MonadAff, liftAff)
 import Control.Monad.Eff.Ref as Ref
-import Control.Monad.Error.Class (class MonadThrow, class MonadError, throwError)
-import Control.Monad.Reader.Class (class MonadAsk, ask)
-import Control.Monad.State.Class (class MonadState)
+import Control.Monad.Error.Class (class MonadThrow)
 import Control.Monad.Rec.Class (class MonadRec)
-import Control.Monad.Free (Free, foldFree)
-import Data.Time.Duration (Milliseconds(..))
 import Data.Argonaut as J
 import Data.Bifunctor (lmap)
-import Data.Either (Either(..), either)
+import Data.Either (Either)
 import Data.List (List(..), (:))
-import Data.Maybe (Maybe(..))
 import Data.Map as Map
-import Data.Newtype (class Newtype, un, wrap)
-import Data.Traversable as T
+import Data.Maybe (Maybe(..))
 import Data.Symbol (SProxy(..))
-import Data.StrMap as SM
-import Lunapark.Affjax as LA
+import Data.Time.Duration (Milliseconds(..))
+import Data.Traversable as T
+import Lunapark.Endpoint as LP
 import Lunapark.Error as LE
 import Lunapark.Types as LT
-import Lunapark.Endpoint as LP
+import Network.HTTP.Affjax (AJAX)
 import Node.Buffer as B
 import Node.FS.Aff as FS
-import Network.HTTP.Affjax (AJAX)
-import Unsafe.Coerce (unsafeCoerce)
 import Run as R
-import Run.Except (EXCEPT, runExcept, throw)
+import Run.Except (EXCEPT)
 import Run.Except as RE
-import Debug.Trace as DT
 import Unsafe.Coerce (unsafeCoerce)
+
+import Debug.Trace as DT
 
 type LunaparkEffects e =
   ( ajax ∷ AJAX
@@ -51,30 +45,28 @@ type LunaparkEffects e =
 -- |   findElement ...
 -- | ```
 init
-  ∷ ∀ e m a
+  ∷ ∀ e m r a
   . MonadAff (LunaparkEffects e) m
   ⇒ MonadRec m
+  ⇒ MonadThrow LE.Error m
   ⇒ String
   → LT.CapabilitiesRequest
-  → m (Lunapark e a → m (Either LE.Error a))
+  → m (Either LE.Error (Lunapark e r a → BaseRun r e a))
 init uri caps = do
-  sessObj ← liftAff $ LP.post uri (LP.Session : Nil) $ LT.encodeCapabilitiesRequest caps
-  case lmap LE.unknownError <<< LT.decodeCreateSessionResponse =<< sessObj of
-    Left e → pure \_ → pure $ Left e
-    Right a → pure \actions → liftAff $ interpret uri a actions
+  res ← liftAff $ LP.post uri (LP.Session : Nil) $ LT.encodeCapabilitiesRequest caps
+  pure do
+    sessObj ← res
+    sessionResponse ← lmap LE.unknownError $ LT.decodeCreateSessionResponse sessObj
+    pure $ interpret uri sessionResponse
 
-interpret ∷ ∀ a e. String → LT.CreateSessionResponse → Lunapark e a → Aff (LunaparkEffects e) (Either LE.Error a)
-interpret uri {session, capabilities} actions = do
-  id
-  --expandEffectRows
-    $ R.runBaseAff'
-    $ runExcept
-    $ runLunapark uri session capabilities
-    $ un Lunapark actions
---  where
-  -- This is definitely safe, because more effects is not less effects
---  expandEffectRows ∷ ∀ m r0 r1 r. Union r0 r1 r ⇒ m r0 ~> m r
---  expandEffectRows = unsafeCoerce
+interpret
+  ∷ ∀ e r
+  . String
+  → LT.CreateSessionResponse
+  → Lunapark e r
+  ~> BaseRun r e
+interpret uri {session, capabilities} =
+  runLunapark uri session capabilities
 
 data LunaparkF a
   = Quit a
@@ -110,13 +102,31 @@ data LunaparkF a
   | GetAlertText (String → a)
   | SendAlertText String a
   | Screenshot String a
-  | ElementScreenshot LT.Element String a
+  | GetActiveElement (LT.Element → a)
   | FindElement LT.Locator (LT.Element → a)
   | FindElements LT.Locator (Array LT.Element → a)
-  | FindElementInElement LT.Element LT.Locator (LT.Element → a)
-  | FindElementsInElement LT.Element LT.Locator (Array LT.Element → a)
+  | OnElement LT.Element (ElementF a)
+
+data ElementF a
+  = ChildElement LT.Locator (LT.Element → a)
+  | ChildElements LT.Locator (Array LT.Element → a)
+  | IsSelected (Boolean → a)
+  | GetAttribute String (String → a)
+  | GetProperty String (J.Json → a)
+  | GetCss String (String → a)
+  | GetText (String → a)
+  | GetTagName (String → a)
+  | GetRectangle (LT.Rectangle → a)
+  | IsEnabled (Boolean → a)
+  | ClickEl a
+  | ClearEl a
+  | SendKeys String a
+  | ScreenshotEl String a
+  | IsVisible (Boolean → a)
+  | Submit a
 
 derive instance functorLunaparkF ∷ Functor LunaparkF
+derive instance elementF ∷ Functor ElementF
 
 type BaseRun r e = R.Run
   ( except ∷ EXCEPT LE.Error
@@ -124,138 +134,168 @@ type BaseRun r e = R.Run
   , eff ∷ R.EFF (LunaparkEffects e)
   | r)
 
-type RunLunapark e = BaseRun (lunapark ∷ LUNAPARK) e
-
-newtype Lunapark e a = Lunapark (RunLunapark e a)
+type Lunapark e r = BaseRun (lunapark ∷ LUNAPARK|r) e
 
 _lunapark = SProxy ∷ SProxy "lunapark"
 type LUNAPARK = R.FProxy LunaparkF
 
-liftLunapark ∷ ∀ a e. LunaparkF a → Lunapark e a
-liftLunapark = Lunapark <<< R.lift _lunapark
+liftLunapark ∷ ∀ a r e. LunaparkF a → Lunapark e r a
+liftLunapark = R.lift _lunapark
 
-derive instance newtypeLunapark ∷ Newtype (Lunapark e a) _
-derive newtype instance functorLunapark ∷ Functor (Lunapark e)
-derive newtype instance applyLunapark ∷ Apply (Lunapark e)
-derive newtype instance applicativeLunapark ∷ Applicative (Lunapark e)
-derive newtype instance bindLunapark ∷ Bind (Lunapark e)
-derive newtype instance monadLunapark ∷ Monad (Lunapark e)
-
-quit ∷ ∀ e. Lunapark e Unit
+quit ∷ ∀ e r. Lunapark e r Unit
 quit = liftLunapark $ Quit unit
 
-status ∷ ∀ e. Lunapark e LT.ServerStatus
+status ∷ ∀ e r. Lunapark e r LT.ServerStatus
 status = liftLunapark $ Status id
 
-setTimeouts ∷ ∀ e. LT.Timeouts → Lunapark e Unit
+setTimeouts ∷ ∀ e r. LT.Timeouts → Lunapark e r Unit
 setTimeouts ts = liftLunapark $ SetTimeouts ts unit
 
-getTimeouts ∷ ∀ e. Lunapark e LT.Timeouts
+getTimeouts ∷ ∀ e r. Lunapark e r LT.Timeouts
 getTimeouts = liftLunapark $ GetTimeouts id
 
-go ∷ ∀ e. String → Lunapark e Unit
+go ∷ ∀ e r. String → Lunapark e r Unit
 go uri = liftLunapark $ GoTo uri unit
 
-getUrl ∷ ∀ e. Lunapark e String
+getUrl ∷ ∀ e r. Lunapark e r String
 getUrl = liftLunapark $ GetUrl id
 
-forward ∷ ∀ e. Lunapark e Unit
+forward ∷ ∀ e r. Lunapark e r Unit
 forward = liftLunapark $ Forward unit
 
-back ∷ ∀ e. Lunapark e Unit
+back ∷ ∀ e r. Lunapark e r Unit
 back = liftLunapark $ Back unit
 
-refresh ∷ ∀ e. Lunapark e Unit
+refresh ∷ ∀ e r. Lunapark e r Unit
 refresh = liftLunapark $ Refresh unit
 
-getTitle ∷ ∀ e. Lunapark e String
+getTitle ∷ ∀ e r. Lunapark e r String
 getTitle = liftLunapark $ GetTitle id
 
-getWindowHandle ∷ ∀ e. Lunapark e LT.WindowHandle
+getWindowHandle ∷ ∀ e r. Lunapark e r LT.WindowHandle
 getWindowHandle = liftLunapark $ GetWindowHandle id
 
-getWindowHandles ∷ ∀ e. Lunapark e (Array LT.WindowHandle)
+getWindowHandles ∷ ∀ e r. Lunapark e r (Array LT.WindowHandle)
 getWindowHandles = liftLunapark $ GetWindowHandles id
 
-closeWindow ∷ ∀ e. Lunapark e Unit
+closeWindow ∷ ∀ e r. Lunapark e r Unit
 closeWindow = liftLunapark $ CloseWindow unit
 
-switchToWindow ∷ ∀ e. LT.WindowHandle → Lunapark e Unit
+switchToWindow ∷ ∀ e r. LT.WindowHandle → Lunapark e r Unit
 switchToWindow w = liftLunapark $ SwitchToWindow w unit
 
-switchToFrame ∷ ∀ e. LT.FrameId → Lunapark e Unit
+switchToFrame ∷ ∀ e r. LT.FrameId → Lunapark e r Unit
 switchToFrame f = liftLunapark $ SwitchToFrame f unit
 
-switchToParentFrame ∷ ∀ e. Lunapark e Unit
+switchToParentFrame ∷ ∀ e r. Lunapark e r Unit
 switchToParentFrame = liftLunapark $ SwitchToParentFrame unit
 
-getWindowRectangle ∷ ∀ e. Lunapark e LT.Rectangle
+getWindowRectangle ∷ ∀ e r. Lunapark e r LT.Rectangle
 getWindowRectangle = liftLunapark $ GetWindowRectangle id
 
-setWindowRectangle ∷ ∀ e. LT.Rectangle → Lunapark e Unit
+setWindowRectangle ∷ ∀ e r. LT.Rectangle → Lunapark e r Unit
 setWindowRectangle r = liftLunapark $ SetWindowRectangle r unit
 
-maximizeWindow ∷ ∀ e. Lunapark e Unit
+maximizeWindow ∷ ∀ e r. Lunapark e r Unit
 maximizeWindow = liftLunapark $ MaximizeWindow unit
 
-minimizeWindow ∷ ∀ e. Lunapark e Unit
+minimizeWindow ∷ ∀ e r. Lunapark e r Unit
 minimizeWindow = liftLunapark $ MinimizeWindow unit
 
-fullscreenWindow ∷ ∀ e. Lunapark e Unit
+fullscreenWindow ∷ ∀ e r. Lunapark e r Unit
 fullscreenWindow = liftLunapark $ FullscreenWindow unit
 
-executeScript ∷ ∀ e. LT.Script → Lunapark e J.Json
+executeScript ∷ ∀ e r. LT.Script → Lunapark e r J.Json
 executeScript script = liftLunapark $ ExecuteScript script id
 
-executeScriptAsync ∷ ∀ e. LT.Script → Lunapark e J.Json
+executeScriptAsync ∷ ∀ e r. LT.Script → Lunapark e r J.Json
 executeScriptAsync script = liftLunapark $ ExecuteScriptAsync script id
 
-getAllCookies ∷ ∀ e. Lunapark e (Array LT.Cookie)
+getAllCookies ∷ ∀ e r. Lunapark e r (Array LT.Cookie)
 getAllCookies = liftLunapark $ GetAllCookies id
 
-getCookie ∷ ∀ e. String → Lunapark e LT.Cookie
+getCookie ∷ ∀ e r. String → Lunapark e r LT.Cookie
 getCookie name = liftLunapark $ GetCookie name id
 
-addCookie ∷ ∀ e. LT.Cookie → Lunapark e Unit
+addCookie ∷ ∀ e r. LT.Cookie → Lunapark e r Unit
 addCookie cookie = liftLunapark $ AddCookie cookie unit
 
-deleteCookie ∷ ∀ e. String → Lunapark e Unit
+deleteCookie ∷ ∀ e r. String → Lunapark e r Unit
 deleteCookie name = liftLunapark $ DeleteCookie name unit
 
-deleteAllCookies ∷ ∀ e. Lunapark e Unit
+deleteAllCookies ∷ ∀ e r. Lunapark e r Unit
 deleteAllCookies = liftLunapark $ DeleteAllCookies unit
 
-dismissAlert ∷ ∀ e. Lunapark e Unit
+dismissAlert ∷ ∀ e r. Lunapark e r Unit
 dismissAlert = liftLunapark $ DismissAlert unit
 
-acceptAlert ∷ ∀ e. Lunapark e Unit
+acceptAlert ∷ ∀ e r. Lunapark e r Unit
 acceptAlert = liftLunapark $ AcceptAlert unit
 
-getAlertText ∷ ∀ e. Lunapark e String
+getAlertText ∷ ∀ e r. Lunapark e r String
 getAlertText = liftLunapark $ GetAlertText id
 
-sendAlertText ∷ ∀ e. String → Lunapark e Unit
+sendAlertText ∷ ∀ e r. String → Lunapark e r Unit
 sendAlertText txt = liftLunapark $ SendAlertText txt unit
 
-screenshot ∷ ∀ e. String → Lunapark e Unit
+screenshot ∷ ∀ e r. String → Lunapark e r Unit
 screenshot fp = liftLunapark $ Screenshot fp unit
 
-elementScreenshot ∷ ∀ e. LT.Element → String → Lunapark e Unit
-elementScreenshot el fp = liftLunapark $ ElementScreenshot el fp unit
+elementScreenshot ∷ ∀ e r. LT.Element → String → Lunapark e r Unit
+elementScreenshot el fp = liftLunapark $ OnElement el $ ScreenshotEl fp unit
 
-findElement ∷ ∀ e. LT.Locator → Lunapark e LT.Element
+findElement ∷ ∀ e r. LT.Locator → Lunapark e r LT.Element
 findElement l = liftLunapark $ FindElement l id
 
-findElements ∷ ∀ e. LT.Locator → Lunapark e (Array LT.Element)
+findElements ∷ ∀ e r. LT.Locator → Lunapark e r (Array LT.Element)
 findElements l = liftLunapark $ FindElements l id
 
-findElementInElement ∷ ∀ e. LT.Element → LT.Locator → Lunapark e LT.Element
-findElementInElement el l = liftLunapark $ FindElementInElement el l id
+childElement ∷ ∀ e r. LT.Element → LT.Locator → Lunapark e r LT.Element
+childElement el l = liftLunapark $ OnElement el $ ChildElement l id
 
-findElementsInElement ∷ ∀ e. LT.Element → LT.Locator → Lunapark e (Array LT.Element)
-findElementsInElement el l = liftLunapark $ FindElementsInElement el l id
+childElements ∷ ∀ e r. LT.Element → LT.Locator → Lunapark e r (Array LT.Element)
+childElements el l = liftLunapark $ OnElement el $ ChildElements l id
 
-runLunapark ∷ ∀ e. String → LT.SessionId → Array LT.Capability → RunLunapark e ~> BaseRun () e
+isSelected ∷ ∀ e r. LT.Element → Lunapark e r Boolean
+isSelected el = liftLunapark $ OnElement el $ IsSelected id
+
+getAttribute ∷ ∀ e r. LT.Element → String → Lunapark e r String
+getAttribute el name = liftLunapark $ OnElement el $ GetAttribute name id
+
+getProperty ∷ ∀ e r. LT.Element → String → Lunapark e r J.Json
+getProperty el name = liftLunapark $ OnElement el $ GetProperty name id
+
+getCss ∷ ∀ e r. LT.Element → String → Lunapark e r String
+getCss el name = liftLunapark $ OnElement el $ GetCss name id
+
+getText ∷ ∀ e r. LT.Element → Lunapark e r String
+getText el = liftLunapark $ OnElement el $ GetText id
+
+getTagName ∷ ∀ e r. LT.Element → Lunapark e r String
+getTagName el = liftLunapark $ OnElement el $ GetTagName id
+
+getRectangle ∷ ∀ e r. LT.Element → Lunapark e r LT.Rectangle
+getRectangle el = liftLunapark $ OnElement el $ GetRectangle id
+
+isEnabled ∷ ∀ e r. LT.Element → Lunapark e r Boolean
+isEnabled el = liftLunapark $ OnElement el $ IsEnabled id
+
+clickElement ∷ ∀ e r. LT.Element → Lunapark e r Unit
+clickElement el = liftLunapark $ OnElement el $ ClickEl unit
+
+clearElement ∷ ∀ e r. LT.Element → Lunapark e r Unit
+clearElement el = liftLunapark $ OnElement el $ ClearEl unit
+
+sendKeysElement ∷ ∀ e r. LT.Element → String → Lunapark e r Unit
+sendKeysElement el txt = liftLunapark $ OnElement el $ SendKeys txt unit
+
+isVisible ∷ ∀ e r. LT.Element → Lunapark e r Boolean
+isVisible el = liftLunapark $ OnElement el $ IsVisible id
+
+submitElement ∷ ∀ e r. LT.Element → Lunapark e r Unit
+submitElement el = liftLunapark $ OnElement el $ Submit unit
+
+runLunapark ∷ ∀ e r. String → LT.SessionId → Array LT.Capability → Lunapark e r ~> BaseRun r e
 runLunapark uri session capabilities a = do
   timeoutsRef ←
     R.liftEff $ Ref.newRef
@@ -281,7 +321,7 @@ type HandleLunaparkInput =
   , capabilities ∷ Array LT.Capability
   }
 
-handleLunapark ∷ ∀ e. HandleLunaparkInput → LunaparkF ~> BaseRun () e
+handleLunapark ∷ ∀ e r. HandleLunaparkInput → LunaparkF ~> BaseRun r e
 handleLunapark inp = case _ of
   Quit next → do
     _ ← delete $ inSession : Nil
@@ -429,24 +469,71 @@ handleLunapark inp = case _ of
     buffer ← R.liftEff $ B.fromString screenshotPack.content screenshotPack.encoding
     R.liftAff $ FS.writeFile fp buffer
     pure next
-  ElementScreenshot el fp next → do
-    res ← get (inSession : LP.InElement el : LP.Screenshot : Nil)
-    screenshotPack ← throwLeft $ LT.decodeScreenshot res
-    buffer ← R.liftEff $ B.fromString screenshotPack.content screenshotPack.encoding
-    R.liftAff $ FS.writeFile fp buffer
-    pure next
   FindElement loc cont → do
     res ← post (inSession : LP.Element : Nil) (LT.encodeLocator loc)
     map cont $ throwLeft $ LT.decodeElement res
   FindElements loc cont → do
     res ← post (inSession : LP.Elements : Nil) (LT.encodeLocator loc)
     map cont $ throwLeft $ T.traverse LT.decodeElement =<< J.decodeJson res
-  FindElementInElement el loc cont → do
-    res ← post (inSession : LP.InElement el : LP.Element : Nil) (LT.encodeLocator loc)
+  GetActiveElement cont → do
+    res ← get (inSession : LP.Element : LP.Active : Nil)
     map cont $ throwLeft $ LT.decodeElement res
-  FindElementsInElement el loc cont → do
-    res ← post (inSession : LP.InElement el : LP.Elements : Nil) (LT.encodeLocator loc)
-    map cont $ throwLeft $ T.traverse LT.decodeElement =<< J.decodeJson res
+  OnElement el elF →
+    let inElement = LP.InElement el
+    in case elF of
+      ChildElement loc cont → do
+        res ← post (inSession : inElement : LP.Element : Nil) (LT.encodeLocator loc)
+        map cont $ throwLeft $ LT.decodeElement res
+      ChildElements loc cont → do
+        res ← post (inSession : inElement : LP.Elements : Nil) (LT.encodeLocator loc)
+        map cont $ throwLeft $ T.traverse LT.decodeElement =<< J.decodeJson res
+      ScreenshotEl fp next → do
+        res ← get (inSession : inElement : LP.Screenshot : Nil)
+        screenshotPack ← throwLeft $ LT.decodeScreenshot res
+        buffer ← R.liftEff $ B.fromString screenshotPack.content screenshotPack.encoding
+        R.liftAff $ FS.writeFile fp buffer
+        pure next
+      IsSelected cont → do
+        res ← get (inSession : inElement : LP.Selected : Nil)
+        map cont $ throwLeft $ J.decodeJson res
+      GetAttribute attr cont → do
+        res ← get (inSession : inElement : LP.Attribute attr : Nil)
+        map cont $ throwLeft $ J.decodeJson res
+      GetProperty prop cont → do
+        map cont $ get (inSession : inElement : LP.Property prop : Nil)
+--        either RE.throw (pure <<< cont) res
+--        map cont $ RE.rethrow res
+      GetCss css cont → do
+        res ← get (inSession : inElement : LP.CssValue css : Nil)
+        map cont $ throwLeft $ J.decodeJson res
+      GetText cont → do
+        res ← get (inSession : inElement : LP.Text : Nil)
+        map cont $ throwLeft $ J.decodeJson res
+      GetTagName cont → do
+        res ← get (inSession : inElement : LP.Name : Nil)
+        map cont $ throwLeft $ J.decodeJson res
+      GetRectangle cont → do
+        res ← get (inSession : inElement : LP.Rect : Nil)
+        map cont $ throwLeft $ LT.decodeRectangle res
+      IsEnabled cont → do
+        res ← get (inSession : inElement : LP.Enabled : Nil)
+        map cont $ throwLeft $ J.decodeJson res
+      ClickEl next → do
+        _ ← post_ (inSession : inElement : LP.Click : Nil)
+        pure next
+      ClearEl next → do
+        _ ← post_ (inSession : inElement : LP.Clear : Nil)
+        pure next
+      SendKeys txt next → do
+        _ ← post (inSession : inElement : LP.Value : Nil) (LT.encodeSendKeysRequest txt)
+        pure next
+      IsVisible cont → do
+        res ← get (inSession : inElement : LP.Displayed : Nil)
+        map cont $ throwLeft $ J.decodeJson res
+      Submit next → do
+        _ ← post_ (inSession : inElement : LP.Submit : Nil)
+        pure next
+
 
   where
   delete a = liftAndRethrow $ LP.delete inp.uri a
@@ -454,7 +541,7 @@ handleLunapark inp = case _ of
   get a = liftAndRethrow $ LP.get inp.uri a
   post_ a = liftAndRethrow $ LP.post_ inp.uri a
 
-  withFallback ∷ ∀ a. String → { w3c ∷ BaseRun () e a, jsonWire ∷ BaseRun () e a } → BaseRun () e a
+  withFallback ∷ ∀ a. String → { w3c ∷ BaseRun r e a, jsonWire ∷ BaseRun r e a } → BaseRun r e a
   withFallback key { w3c: try, jsonWire: fallback } = do
     mp ← R.liftEff $ Ref.readRef inp.requestMapRef
     case DT.spy $ Map.lookup key mp of
@@ -475,12 +562,12 @@ handleLunapark inp = case _ of
   inSession ∷ LP.EndpointPart
   inSession = LP.InSession inp.session
 
-  liftAndRethrow ∷ ∀ e ω. Aff (LunaparkEffects e) (Either LE.Error ω) → BaseRun () e ω
+  liftAndRethrow ∷ ∀ e ω. Aff (LunaparkEffects e) (Either LE.Error ω) → BaseRun r e ω
   liftAndRethrow a = do
     res ← R.liftAff a
     RE.rethrow res
 
-  throwLeft ∷ ∀ ω. Either String ω → BaseRun () e ω
+  throwLeft ∷ ∀ ω. Either String ω → BaseRun r e ω
   throwLeft = RE.rethrow <<< lmap LE.unknownError
 
 -- Safe, since we actually want handler and result have same rows not, remove except
