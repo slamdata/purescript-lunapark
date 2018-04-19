@@ -7,20 +7,20 @@ import Control.Monad.Aff as Aff
 import Control.Monad.Aff.Class (class MonadAff, liftAff)
 import Control.Monad.Eff.Ref as Ref
 import Control.Monad.Eff.Class (liftEff)
-import Control.Monad.Error.Class (class MonadThrow)
 import Control.Monad.Rec.Class (class MonadRec)
 import Data.Argonaut as J
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), isRight)
 import Data.List (List(..), (:))
+import Data.List as L
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Symbol (SProxy(..))
 import Data.StrMap as SM
+import Data.String as Str
 import Data.Variant as V
 import Data.Time.Duration (Milliseconds(..))
 import Data.Traversable as T
-import Data.Tuple (Tuple(..))
 import Lunapark.Endpoint as LP
 import Lunapark.Error as LE
 import Lunapark.Types as LT
@@ -31,8 +31,6 @@ import Run as R
 import Run.Except (EXCEPT)
 import Run.Except as RE
 import Unsafe.Coerce (unsafeCoerce)
-
---import Debug.Trace as DT
 
 type LunaparkEffects e =
   ( ajax ∷ AJAX
@@ -53,7 +51,6 @@ init
   ∷ ∀ e m r a
   . MonadAff (LunaparkEffects e) m
   ⇒ MonadRec m
-  ⇒ MonadThrow LE.Error m
   ⇒ String
   → LT.CapabilitiesRequest
   → m (Either LE.Error (Lunapark e r a → BaseRun e r a))
@@ -82,8 +79,8 @@ init uri caps = do
       map isRight
         $ liftAff
         $ LP.post uri  (LP.InSession session : LP.Actions : Nil)
-        $ LT.encodeActionRequest $ SM.fromFoldable
-            [ Tuple "id" $ LT.NoSource [ V.inj (SProxy ∷ SProxy "pause") $ Milliseconds 0.0 ] ]
+        $ LT.encodeActionRequest $ SM.singleton "action-test"
+        $ LT.NoSource [ LT.pause $ Milliseconds 0.0 ]
 
     let
       input =
@@ -167,7 +164,7 @@ data ActionF a
   = Click LT.Button a
   | ButtonDown LT.Button a
   | ButtonUp LT.Button a
-  | DoubleClick a
+  | DoubleClick LT.Button a
   | SendKeys String a
   | MoveTo LT.PointerMove a
   | Touch (TouchF a)
@@ -178,8 +175,8 @@ data TouchF a
   | TouchDown a
   | TouchUp a
   | LongClick a
-  | Flick a
-  | Scroll a
+  | Flick LT.PointerMove a
+  | Scroll LT.PointerMove a
   | DoubleTap a
 
 derive instance functorLunaparkF ∷ Functor LunaparkF
@@ -187,18 +184,16 @@ derive instance functorElementF ∷ Functor ElementF
 derive instance functorActionF ∷ Functor ActionF
 derive instance functorTouchF ∷ Functor TouchF
 
+type Lunapark e r = BaseRun e (lunapark ∷ LUNAPARK, lunaparkActions ∷ LUNAPARK_ACTIONS|r)
+
 type BaseRun e r = R.Run
   ( except ∷ EXCEPT LE.Error
   , aff ∷ R.AFF (LunaparkEffects e)
   , eff ∷ R.EFF (LunaparkEffects e)
   | r)
 
-type Lunapark e r = BaseRun e (lunapark ∷ LUNAPARK, lunaparkActions ∷ LUNAPARK_ACTIONS|r)
-
 _lunapark = SProxy ∷ SProxy "lunapark"
-_lunaparkActions = SProxy ∷ SProxy "lunaparkActions"
 type LUNAPARK = R.FProxy LunaparkF
-type LUNAPARK_ACTIONS = R.FProxy ActionF
 type WithLunapark r a = R.Run (lunapark ∷ LUNAPARK|r) a
 
 liftLunapark ∷ ∀ a r. LunaparkF a → WithLunapark r a
@@ -363,6 +358,57 @@ performActions req = liftLunapark $ PerformActions req unit
 releaseActions ∷ ∀ r. WithLunapark r Unit
 releaseActions = liftLunapark $ ReleaseActions unit
 
+-- ACTIONS
+_lunaparkActions = SProxy ∷ SProxy "lunaparkActions"
+type LUNAPARK_ACTIONS = R.FProxy ActionF
+type WithAction r = R.Run (lunaparkActions ∷ LUNAPARK_ACTIONS|r) Unit
+
+liftAction ∷ ∀ r. ActionF Unit → WithAction r
+liftAction = R.lift _lunaparkActions
+
+click ∷ ∀ r. LT.Button → WithAction r
+click btn = liftAction $ Click btn unit
+
+buttonDown ∷ ∀ r. LT.Button → WithAction r
+buttonDown btn = liftAction $ ButtonDown btn unit
+
+buttonUp ∷ ∀ r. LT.Button → WithAction r
+buttonUp btn = liftAction $ ButtonUp btn unit
+
+doubleClick ∷ ∀ r. LT.Button → WithAction r
+doubleClick btn = liftAction $ DoubleClick btn unit
+
+sendKeys ∷ ∀ r. String → WithAction r
+sendKeys txt = liftAction $ SendKeys txt unit
+
+moveTo ∷ ∀ r. LT.PointerMove → WithAction r
+moveTo move = liftAction $ MoveTo move unit
+
+pause ∷ ∀ r. Milliseconds → WithAction r
+pause ms = liftAction $ Pause ms unit
+
+tap ∷ ∀ r. WithAction r
+tap = liftAction $ Touch $ Tap unit
+
+touchDown ∷ ∀ r. WithAction r
+touchDown = liftAction $ Touch $ TouchDown unit
+
+touchUp ∷ ∀ r. WithAction r
+touchUp = liftAction $ Touch $ TouchUp unit
+
+longTap ∷ ∀ r. WithAction r
+longTap = liftAction $ Touch $ LongClick unit
+
+flick ∷ ∀ r. LT.PointerMove → WithAction r
+flick move = liftAction $ Touch $ Flick move unit
+
+scroll ∷ ∀ r. LT.PointerMove → WithAction r
+scroll move = liftAction $ Touch $ Scroll move unit
+
+doubleTap ∷ ∀ r. WithAction r
+doubleTap = liftAction $ Touch $ DoubleTap unit
+
+-- Interpreters
 runLunapark ∷ ∀ e r. HandleLunaparkInput → BaseRun e (lunapark ∷ LUNAPARK|r) ~> BaseRun e r
 runLunapark input = do
   R.interpretRec (R.on _lunapark (handleLunapark input) R.send)
@@ -370,51 +416,109 @@ runLunapark input = do
 runLunaparkActions ∷ ∀ e r. HandleLunaparkInput → Lunapark e r ~> BaseRun e (lunapark ∷ LUNAPARK|r)
 runLunaparkActions input =
   if input.actionsEnabled
-  then interpretW3CActions input SM.empty
+  then interpretW3CActions input Nil
   else R.interpretRec (R.on _lunaparkActions (jsonWireActions input) R.send)
 
 interpretW3CActions
   ∷ ∀ e r
   . HandleLunaparkInput
-  → LT.ActionRequest
+  → List LT.ActionSequence
   → Lunapark e r
   ~> BaseRun e (lunapark ∷ LUNAPARK|r)
 interpretW3CActions inp acc as = case R.peel as of
   Left la → case tag la of
     Left a → w3cActions acc (interpretW3CActions inp) a
     Right others → do
-      performActions acc
+      T.for_ (L.reverse acc) \s → performActions $ SM.singleton "dummy" s
       cont ← R.send others
-      interpretW3CActions inp SM.empty cont
+      interpretW3CActions inp Nil cont
   Right a → pure a
   where
   tag = R.on _lunaparkActions Left Right
 
 w3cActions
   ∷ ∀ e r a
-  . LT.ActionRequest
-  → ( LT.ActionRequest
+  . List LT.ActionSequence
+  → ( List LT.ActionSequence
     → Lunapark e r
     ~> BaseRun e (lunapark ∷ LUNAPARK|r)
     )
   → ActionF (Lunapark e r a)
   → BaseRun e (lunapark ∷ LUNAPARK|r) a
 w3cActions acc loop = case _ of
-  Click btn next → loop acc next
-  ButtonDown btn next → loop acc next
-  ButtonUp btn next → loop acc next
-  DoubleClick next → loop acc next
-  MoveTo move next → loop acc next
-  SendKeys txt next → loop acc next
-  Pause ms next → loop acc next
+  Click btn next →
+    let seq = [ LT.pointerDown btn, LT.pointerUp btn ]
+    in loop (inMouse seq) next
+  ButtonDown btn next →
+    let seq = [ LT.pointerDown btn ]
+    in loop (inMouse seq) next
+  ButtonUp btn next →
+    let seq = [ LT.pointerUp btn ]
+    in loop (inMouse seq) next
+  DoubleClick btn next →
+    let seq = [ LT.pointerDown btn, LT.pointerUp btn, LT.pointerDown btn, LT.pointerUp btn ]
+    in loop (inMouse seq) next
+  MoveTo move next →
+    let seq = [ LT.pointerMove move ]
+    in loop (inPointer seq) next
+  SendKeys txt next →
+    let seq = T.foldMap (\ch → [ LT.keyDown ch, LT.keyUp ch ]) $ Str.toCharArray txt
+    in loop (inKeys seq) next
+  Pause ms next →
+    let seq = [ LT.pause ms ]
+    in loop (anywhere seq) next
   Touch tch → case tch of
-    Tap next → loop acc next
-    TouchDown next → loop acc next
-    TouchUp next → loop acc next
-    LongClick next → loop acc next
-    Flick next → loop acc next
-    Scroll next → loop acc next
-    DoubleTap next → loop acc next
+    Tap next →
+      let seq = [ LT.pointerDown LT.LeftBtn, LT.pointerUp LT.LeftBtn ]
+      in loop (inTouch seq) next
+    TouchDown next →
+      let seq = [ LT.pointerDown LT.LeftBtn ]
+      in loop (inTouch seq) next
+    TouchUp next →
+      let seq = [ LT.pointerUp LT.LeftBtn ]
+      in loop (inTouch seq) next
+    LongClick next →
+      let seq = [ LT.pointerDown LT.LeftBtn, LT.pause (Milliseconds 3000.0), LT.pointerUp LT.LeftBtn ]
+      in loop (inTouch seq) next
+    Flick move next →
+      let seq = [ LT.pointerMove move ]
+      in loop (inTouch seq) next
+    Scroll move next →
+      let seq = [ LT.pointerMove move ]
+      in loop (inTouch seq) next
+    DoubleTap next →
+      let seq = [ LT.pointerDown LT.LeftBtn, LT.pointerUp LT.LeftBtn, LT.pointerDown LT.LeftBtn, LT.pointerUp LT.LeftBtn ]
+      in loop (inTouch seq) next
+  where
+  unconsed = L.uncons acc
+
+  inMouse seq = case unconsed of
+    Just { head: (LT.Pointer LT.Mouse as), tail } →
+      LT.Pointer LT.Mouse (as <> seq) : tail
+    _ → LT.Pointer LT.Mouse seq : acc
+
+  inPointer seq = case unconsed of
+    Just { head: (LT.Pointer ptr as), tail } →
+      LT.Pointer ptr (as <> seq) : tail
+    _ → LT.Pointer LT.Mouse seq : acc
+
+  inKeys seq = case unconsed of
+    Just { head: LT.Key as, tail } →
+      LT.Key (as <> seq) : tail
+    _ → LT.Key seq : acc
+
+  inTouch seq = case unconsed of
+    Just { head: (LT.Pointer LT.Touch as), tail } →
+      LT.Pointer LT.Touch (as <> seq) : tail
+    _ → LT.Pointer LT.Mouse seq : acc
+
+  anywhere ∷ Array (V.Variant (pause ∷ Milliseconds)) → L.List LT.ActionSequence
+  anywhere seq = case unconsed of
+    Nothing → L.singleton $ LT.NoSource seq
+    Just { head, tail } → case head of
+      LT.Pointer ptr as → LT.Pointer ptr (as <> map V.expand seq) : tail
+      LT.Key as → LT.Key (as <> map V.expand seq) : tail
+      LT.NoSource as → LT.NoSource (as <> seq) : tail
 
 type HandleLunaparkInput =
   { session ∷ LT.SessionId
@@ -436,8 +540,12 @@ jsonWireActions inp = case _ of
   ButtonUp btn next → do
     _ ← post (LP.ButtonUp : Nil) (LT.encodeButton btn)
     pure next
-  DoubleClick next → do
-    _ ← post_ (LP.DoubleClick : Nil)
+  DoubleClick btn next → do
+    _ ← case btn of
+      LT.LeftBtn → post_ (LP.DoubleClick : Nil)
+      other → do
+        _ ← post (LP.Click : Nil) (LT.encodeButton btn)
+        post (LP.Click : Nil) (LT.encodeButton btn)
     pure next
   SendKeys txt next → do
     _ ← post (LP.Keys : Nil) (LT.encodeSendKeysRequest txt)
@@ -466,11 +574,21 @@ jsonWireActions inp = case _ of
     LongClick next → do
       _ ← post_ (LP.Touch : LP.LongClick : Nil)
       pure next
-    Flick next → do
-      _ ← post_ (LP.Touch : LP.Flick : Nil)
+    Flick move next → do
+      element ← case move.origin of
+        LT.FromViewport → map Just $ findElement $ LT.ByTagName "body"
+        LT.FromPointer → pure Nothing
+        LT.FromElement el → pure $ Just el
+      let req = { xoffset: move.x, yoffset: move.y, element }
+      _ ← post (LP.Touch : LP.Flick : Nil) (LT.encodeMoveToRequest req)
       pure next
-    Scroll next → do
-      _ ← post_ (LP.Touch : LP.Scroll : Nil)
+    Scroll move next → do
+      element ← case move.origin of
+        LT.FromViewport → map Just $ findElement $ LT.ByTagName "body"
+        LT.FromPointer → pure Nothing
+        LT.FromElement el → pure $ Just el
+      let req = { xoffset: move.x, yoffset: move.y, element }
+      _ ← post (LP.Touch : LP.Scroll : Nil) (LT.encodeMoveToRequest req)
       pure next
     DoubleTap next → do
       _ ← post_ (LP.Touch : LP.DoubleClick : Nil)

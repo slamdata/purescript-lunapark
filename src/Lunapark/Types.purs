@@ -15,6 +15,7 @@ import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, un)
 import Data.StrMap as SM
 import Data.String as Str
+import Data.Symbol (SProxy(..))
 import Data.Time.Duration (Milliseconds(..))
 import Data.Tuple (Tuple(..))
 import Data.Variant as V
@@ -306,6 +307,24 @@ type Action = V.Variant
   , pointerDown ∷ Button
   , pointerMove ∷ PointerMove
   )
+
+pause ∷ ∀ r a. a → V.Variant (pause ∷ a|r)
+pause = V.inj (SProxy ∷ SProxy "pause")
+
+keyDown ∷ ∀ r a. a → V.Variant (keyDown ∷ a|r)
+keyDown = V.inj (SProxy ∷ SProxy "keyDown")
+
+keyUp ∷ ∀ r a. a → V.Variant (keyUp ∷ a|r)
+keyUp = V.inj (SProxy ∷ SProxy "keyUp")
+
+pointerUp ∷ ∀ r a. a → V.Variant (pointerUp ∷ a|r)
+pointerUp = V.inj (SProxy ∷ SProxy "pointerUp")
+
+pointerDown ∷ ∀ r a. a → V.Variant (pointerDown ∷ a|r)
+pointerDown = V.inj (SProxy ∷ SProxy "pointerDown")
+
+pointerMove ∷ ∀ r a. a → V.Variant (pointerMove ∷ a|r)
+pointerMove = V.inj (SProxy ∷ SProxy "pointerMove")
 
 encodeAction ∷ Action → Json
 encodeAction = V.match
