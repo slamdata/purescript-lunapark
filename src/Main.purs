@@ -13,14 +13,6 @@ import Run.Except as RE
 
 import Debug.Trace as DT
 
-
-
-defaultTimeouts ∷ LT.Timeouts
-defaultTimeouts =
-  { pageLoad: wrap 300000.0
-  , implicit: wrap 0.0
-  , script: wrap 30000.0
-  }
 main ∷ Eff _ Unit
 main = void $ Aff.launchAff do
   eiInterpret ← LA.init "http://localhost:4444/wd/hub" { alwaysMatch: [], firstMatch: [ [ LT.BrowserName LT.Chrome ] ] }
