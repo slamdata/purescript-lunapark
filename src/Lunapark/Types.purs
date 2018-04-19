@@ -501,3 +501,18 @@ encodeCapabilitiesRequest r = J.encodeJson $ SM.singleton "capabilities" $ SM.fr
   [ Tuple "alwaysMatch" $ encodeCapabilities r.alwaysMatch
   , Tuple "firstMatch" $ J.encodeJson $ map encodeCapabilities r.firstMatch
   ]
+
+type MoveToRequest =
+  { element ∷ Maybe Element
+  , xoffset ∷ Int
+  , yoffset ∷ Int
+  }
+
+encodeMoveToRequest ∷ MoveToRequest → Json
+encodeMoveToRequest r = J.encodeJson $ SM.fromFoldable
+  [ Tuple "element" $ case r.element of
+       Nothing → J.jsonNull
+       Just el → J.encodeJson $ un Element el
+  , Tuple "xoffset" $ J.encodeJson r.xoffset
+  , Tuple "yoffset" $ J.encodeJson r.yoffset
+  ]
