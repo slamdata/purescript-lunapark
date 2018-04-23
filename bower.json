@@ -1,15 +1,34 @@
 {
   "name": "purescript-lunapark",
+  "homepage": "https://github.com/slamdata/purescript-lunapark",
+  "authors": [
+    "Maxim Zimaliev <zimaliev@gmail.com>"
+  ],
+  "description": "Webdriver/JsonWire bindings for PureScript",
+  "license": "Apache-2.0",
+  "keywords": [
+    "purescript",
+    "selenium",
+    "webdriver",
+    "jsonwire"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/slamdata/purescript-lunapark.git"
+  },
+  "ignore": [
+    "**/*.",
+    "node_modules",
+    "bower_components",
+    "output",
+    "test"
+  ],
   "dependencies": {
     "purescript-affjax": "^5.0.0",
-    "purescript-debug": "^3.0.0",
-    "purescript-codec-argonaut": "^5.0.0",
     "purescript-argonaut": "^3.1.0",
     "purescript-css": "^3.4.0",
     "purescript-node-fs-aff": "^5.0.0",
-    "purescript-node-child-process": "^4.0.0",
-    "purescript-node-process": "^5.0.0",
-    "purescript-free": "^4.3.0",
-    "purescript-run": "^1.0.1"
+    "purescript-run": "^1.0.1",
+    "purescript-xpath": "cryogenian/purescript-xpath#master"
   }
 }

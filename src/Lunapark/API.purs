@@ -38,14 +38,6 @@ type LunaparkEffects e =
   , fs ∷ FS.FS
   | e)
 
--- | Example
--- | ```purescript
--- | runLunapark ← init "http://localhost:4444/wd/hub" SM.empty
--- | result ← runLunapark do
--- |   setTimeouts timeouts
--- |   go "http://google.com"
--- |   findElement ...
--- | ```
 init
   ∷ ∀ e m r a
   . MonadAff (LunaparkEffects e) m

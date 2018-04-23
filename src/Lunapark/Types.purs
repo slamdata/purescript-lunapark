@@ -431,7 +431,6 @@ renderDriverPaths ps = map renderDriverPath pairs
     Chrome → "-Dwebdriver.chrome.driver"
     Firefox → "-DWebdriver.gecko.driver"
 
-
 data PageLoad
   = Normal
   | Eager
