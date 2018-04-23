@@ -1,3 +1,6 @@
+-- | This module contains types for requests and response.
+-- | Most of them are records with `α → Json` and `Json → Either String α` functions
+-- | not newtypes with `Encode|DecodeJson` instances.
 module Lunapark.Types where
 
 import Prelude

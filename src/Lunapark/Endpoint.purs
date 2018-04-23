@@ -1,3 +1,8 @@
+-- | Building whole endpoint leads to having tons of noizy things like `ElementFindElement` and `TouchClick`
+-- | Making this a `Variant` is definitely overkill
+-- | So, to have something like `/session/:sessId/element/:elId/doubleclick` we have
+-- | `InSession sessId : InElement elId : DoubleClick : Nil`
+-- | This is not as typesafe as it could be, but at least it saves from typos.
 module Lunapark.Endpoint where
 
 import Prelude
@@ -17,12 +22,6 @@ import Network.HTTP.Affjax (AJAX)
 import Network.HTTP.Affjax as N
 import Network.HTTP.StatusCode (StatusCode(..))
 
-
--- | Building whole endpoint leads to having tons of noizy things like `ElementFindElement` and `TouchClick`
--- | Making this a `Variant` is definitely overkill
--- | So, to have something like `/session/:sessId/element/:elId/doubleclick` we have
--- | `InSession sessId : InElement elId : DoubleClick : Nil`
--- | This is not as typesafe as it could be, but at least it saves from typos.
 data EndpointPart
   = Session
   | InSession LT.SessionId
