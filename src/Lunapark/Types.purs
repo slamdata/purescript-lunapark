@@ -22,7 +22,7 @@ import Data.Traversable as F
 import Data.Tuple (Tuple(..))
 import Data.Variant as V
 import Data.XPath.AST as XA
-import Data.XPath.Printer (printPath)
+import Data.XPath.Printer (printSelector)
 import Foreign.Object as FO
 import Node.Encoding as NE
 import Node.Path (FilePath)
@@ -158,7 +158,7 @@ encodeRectangle r = J.encodeJson $ FO.fromFoldable
 
 data Locator
   = ByCss CSS.Selector
-  | ByXPath XA.Path
+  | ByXPath XA.Selector
   | ByTagName String
   | ByLinkText String
   | ByPartialLinkText String
@@ -177,7 +177,7 @@ encodeLocator l = J.encodeJson $ FO.fromFoldable case l of
     ]
   ByXPath sel →
     [ Tuple "using" "xpath"
-    , Tuple "value" $ printPath sel
+    , Tuple "value" $ printSelector sel
     ]
   ByLinkText sel →
     [ Tuple "using" "link text"
