@@ -12,17 +12,18 @@ import Data.Argonaut (Json, (.?))
 import Data.Argonaut as J
 import Data.Array as A
 import Data.Either (Either(..))
-import Data.Traversable as F
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, un)
-import Data.StrMap as SM
 import Data.String as Str
 import Data.Symbol (SProxy(..))
 import Data.Time.Duration (Milliseconds(..))
+import Data.Traversable as F
 import Data.Tuple (Tuple(..))
 import Data.Variant as V
-import Data.XPath.Types as X
+import Data.XPath.AST as XA
+import Data.XPath.Printer (printPath)
+import Foreign.Object as FO
 import Node.Encoding as NE
 import Node.Path (FilePath)
 
@@ -45,7 +46,7 @@ decodeElement = J.decodeJson >=> \obj →
   map Element $ obj .? "element-6066-11e4-a52e-4f735466cecf" <|> obj .? "ELEMENT"
 
 encodeElement ∷ Element → Json
-encodeElement (Element eid) = J.encodeJson $ SM.fromFoldable
+encodeElement (Element eid) = J.encodeJson $ FO.fromFoldable
   [ Tuple "element-6066-11e4-a52e-4f735466cecf" eid
   , Tuple "ELEMENT" eid
   ]
@@ -86,7 +87,7 @@ decodeTimeouts = J.decodeJson >=> \obj → do
   pure { script, pageLoad, implicit }
 
 encodeTimeouts ∷ Timeouts → Json
-encodeTimeouts r = J.encodeJson $ SM.fromFoldable
+encodeTimeouts r = J.encodeJson $ FO.fromFoldable
   [ Tuple "script" (un Milliseconds r.script)
   , Tuple "pageLoad" (un Milliseconds r.pageLoad)
   , Tuple "implicit" (un Milliseconds r.implicit)
@@ -94,22 +95,22 @@ encodeTimeouts r = J.encodeJson $ SM.fromFoldable
 
 encodeLegacyTimeouts ∷ Timeouts → Array Json
 encodeLegacyTimeouts r =
-  [ J.encodeJson $ SM.singleton "script" $ un Milliseconds r.script
-  , J.encodeJson $ SM.singleton "implicit" $ un Milliseconds r.implicit
-  , J.encodeJson $ SM.singleton "page load" $ un Milliseconds r.pageLoad
+  [ J.encodeJson $ FO.singleton "script" $ un Milliseconds r.script
+  , J.encodeJson $ FO.singleton "implicit" $ un Milliseconds r.implicit
+  , J.encodeJson $ FO.singleton "page load" $ un Milliseconds r.pageLoad
   ]
 
 encodeGoRequest ∷ String → Json
-encodeGoRequest url = J.encodeJson $ SM.fromFoldable [ Tuple "url" url ]
+encodeGoRequest url = J.encodeJson $ FO.fromFoldable [ Tuple "url" url ]
 
 decodeWindowHandle ∷ Json → Either String WindowHandle
 decodeWindowHandle = map WindowHandle <<< J.decodeJson
 
 encodeSwitchToWindowRequest ∷ WindowHandle → Json
-encodeSwitchToWindowRequest w = J.encodeJson $ SM.fromFoldable [ Tuple "handle" $ un WindowHandle w ]
+encodeSwitchToWindowRequest w = J.encodeJson $ FO.fromFoldable [ Tuple "handle" $ un WindowHandle w ]
 
 encodeFrameId ∷ FrameId → Json
-encodeFrameId fid = J.encodeJson $ SM.fromFoldable [ Tuple "id" encoded ]
+encodeFrameId fid = J.encodeJson $ FO.fromFoldable [ Tuple "id" encoded ]
   where
   encoded = case fid of
     TopFrame → J.jsonNull
@@ -143,12 +144,12 @@ decodeRectangleLegacy { size, position } = do
 
 encodeRectangleLegacy ∷ Rectangle → { size ∷ Json, position ∷ Json }
 encodeRectangleLegacy r =
-  { size: J.encodeJson $ SM.fromFoldable [ Tuple "width" r.width, Tuple "height" r.height ]
-  , position: J.encodeJson $ SM.fromFoldable [ Tuple "x" r.x, Tuple "y" r.y ]
+  { size: J.encodeJson $ FO.fromFoldable [ Tuple "width" r.width, Tuple "height" r.height ]
+  , position: J.encodeJson $ FO.fromFoldable [ Tuple "x" r.x, Tuple "y" r.y ]
   }
 
 encodeRectangle ∷ Rectangle → Json
-encodeRectangle r = J.encodeJson $ SM.fromFoldable
+encodeRectangle r = J.encodeJson $ FO.fromFoldable
   [ Tuple "width" r.width
   , Tuple "height" r.height
   , Tuple "x" r.x
@@ -157,7 +158,7 @@ encodeRectangle r = J.encodeJson $ SM.fromFoldable
 
 data Locator
   = ByCss CSS.Selector
-  | ByXPath X.XPath
+  | ByXPath XA.Path
   | ByTagName String
   | ByLinkText String
   | ByPartialLinkText String
@@ -169,14 +170,14 @@ type RawLocator =
   }
 
 encodeLocator ∷ Locator → Json
-encodeLocator l = J.encodeJson $ SM.fromFoldable case l of
+encodeLocator l = J.encodeJson $ FO.fromFoldable case l of
   ByCss sel →
     [ Tuple "using" "css selector"
     , Tuple "value" $ CSSR.selector sel
     ]
   ByXPath sel →
     [ Tuple "using" "xpath"
-    , Tuple "value" $ X.printXPath sel
+    , Tuple "value" $ printPath sel
     ]
   ByLinkText sel →
     [ Tuple "using" "link text"
@@ -196,7 +197,7 @@ encodeLocator l = J.encodeJson $ SM.fromFoldable case l of
     ]
 
 encodeSendKeysRequest ∷ String → Json
-encodeSendKeysRequest txt = J.encodeJson $ SM.fromFoldable [ Tuple "text" txt ]
+encodeSendKeysRequest txt = J.encodeJson $ FO.fromFoldable [ Tuple "text" txt ]
 
 type Script =
   { script ∷ String
@@ -204,7 +205,7 @@ type Script =
   }
 
 encodeScript ∷ Script → Json
-encodeScript r = J.encodeJson $ SM.fromFoldable
+encodeScript r = J.encodeJson $ FO.fromFoldable
   [ Tuple "script" $ J.encodeJson r.script
   , Tuple "args" $ J.encodeJson r.args
   ]
@@ -220,8 +221,8 @@ type Cookie =
   }
 
 encodeCookie ∷ Cookie → Json
-encodeCookie r = J.encodeJson $ SM.fromFoldable
-  [ Tuple "cookie" $ SM.fromFoldable
+encodeCookie r = J.encodeJson $ FO.fromFoldable
+  [ Tuple "cookie" $ FO.fromFoldable
     $ [ Tuple "name" $ J.encodeJson r.name
       , Tuple "value" $ J.encodeJson r.value
       ]
@@ -293,8 +294,8 @@ type PointerMove =
   , y ∷ Int
   }
 
-encodePointerMove ∷ PointerMove → SM.StrMap Json
-encodePointerMove r = SM.fromFoldable
+encodePointerMove ∷ PointerMove → FO.Object Json
+encodePointerMove r = FO.fromFoldable
   [ Tuple "x" $ J.encodeJson r.x
   , Tuple "y" $ J.encodeJson r.y
   , Tuple "duration" $ J.encodeJson $ un Milliseconds r.duration
@@ -332,32 +333,32 @@ pointerMove = V.inj (SProxy ∷ SProxy "pointerMove")
 encodeAction ∷ Action → Json
 encodeAction = V.match
   { pause: \ms →
-     J.encodeJson $ SM.fromFoldable
+     J.encodeJson $ FO.fromFoldable
        [ Tuple "duration" $ J.encodeJson $ un Milliseconds ms
        , Tuple "type" $ J.encodeJson "pause"
        ]
   , keyDown: \ch →
-     J.encodeJson $ SM.fromFoldable
+     J.encodeJson $ FO.fromFoldable
        [ Tuple "value" $ J.encodeJson ch
        , Tuple "type" $ J.encodeJson "keyDown"
        ]
   , keyUp: \ch →
-     J.encodeJson $ SM.fromFoldable
+     J.encodeJson $ FO.fromFoldable
        [ Tuple "value" $ J.encodeJson ch
        , Tuple "type" $ J.encodeJson "keyUp"
        ]
   , pointerUp: \btn →
-     J.encodeJson $ SM.fromFoldable
+     J.encodeJson $ FO.fromFoldable
        [ Tuple "button" $ encodeButton btn
        , Tuple "type" $ J.encodeJson "pointerUp"
        ]
   , pointerDown: \btn →
-     J.encodeJson $ SM.fromFoldable
+     J.encodeJson $ FO.fromFoldable
        [ Tuple "button" $ encodeButton btn
        , Tuple "type" $ J.encodeJson "pointerDown"
        ]
   , pointerMove: \pm →
-     J.encodeJson $ SM.insert "type" (J.encodeJson "pointerMove") $ encodePointerMove pm
+     J.encodeJson $ FO.insert "type" (J.encodeJson "pointerMove") $ encodePointerMove pm
   }
 
 
@@ -378,31 +379,31 @@ data ActionSequence
       (Array (V.Variant (pause ∷ Milliseconds, pointerUp ∷ Button, pointerDown ∷ Button, pointerMove ∷ PointerMove)))
 
 -- Right, this is not an `Array` but `StrMap` because all `ActionSequence`s are tagged with unique id's
-type ActionRequest = SM.StrMap ActionSequence
+type ActionRequest = FO.Object ActionSequence
 
 encodeActionRequest ∷ ActionRequest → Json
-encodeActionRequest sm = J.encodeJson $ SM.singleton "actions" $ map encodePair arrayOfPairs
+encodeActionRequest sm = J.encodeJson $ FO.singleton "actions" $ map encodePair arrayOfPairs
   where
   arrayOfPairs ∷ Array (Tuple String ActionSequence)
-  arrayOfPairs = SM.toUnfoldable sm
+  arrayOfPairs = FO.toUnfoldable sm
 
   encodePair ∷ Tuple String ActionSequence → Json
   encodePair (Tuple identifier sequence) =
-    J.encodeJson $ SM.insert "id" (J.encodeJson identifier) $ encodeSequence sequence
+    J.encodeJson $ FO.insert "id" (J.encodeJson identifier) $ encodeSequence sequence
 
-  encodeSequence ∷ ActionSequence → J.JObject
+  encodeSequence ∷ ActionSequence → FO.Object Json
   encodeSequence = case _ of
-    NoSource as → SM.fromFoldable
+    NoSource as → FO.fromFoldable
       [ Tuple "type" $ J.encodeJson "none"
       , Tuple "actions" $ J.encodeJson $ map (encodeAction <<< V.expand) as
       ]
-    Key as → SM.fromFoldable
+    Key as → FO.fromFoldable
       [ Tuple "type" $ J.encodeJson "key"
       , Tuple "actions" $ J.encodeJson $ map (encodeAction <<< V.expand) as
       ]
-    Pointer ptype as → SM.fromFoldable
+    Pointer ptype as → FO.fromFoldable
       [ Tuple "type" $ J.encodeJson "pointer"
-      , Tuple "parameters" $ J.encodeJson $ SM.singleton "pointerType" $ printPointerType ptype
+      , Tuple "parameters" $ J.encodeJson $ FO.singleton "pointerType" $ printPointerType ptype
       , Tuple "actions" $ J.encodeJson $ map (encodeAction <<< V.expand) as
       ]
 
@@ -479,7 +480,7 @@ encodeCapabilities = F.foldl (\b a → J.extend (encodeCapability a) b) J.jsonEm
 
 decodeCapabilities ∷ Json → Either String (Array Capability)
 decodeCapabilities = J.decodeJson >=> \obj →
-  F.for (SM.toUnfoldable obj) \l@(Tuple key val) →
+  F.for (FO.toUnfoldable obj) \l@(Tuple key val) →
     decodeCapability l <|> Right (CustomCapability key val)
   where
   decodeCapability ∷ Tuple String Json → Either String Capability
@@ -518,7 +519,7 @@ type CapabilitiesRequest =
   }
 
 encodeCapabilitiesRequest ∷ CapabilitiesRequest → Json
-encodeCapabilitiesRequest r = J.encodeJson $ SM.singleton "capabilities" $ SM.fromFoldable
+encodeCapabilitiesRequest r = J.encodeJson $ FO.singleton "capabilities" $ FO.fromFoldable
   [ Tuple "alwaysMatch" $ encodeCapabilities r.alwaysMatch
   , Tuple "firstMatch" $ J.encodeJson $ map encodeCapabilities r.firstMatch
   ]
@@ -530,7 +531,7 @@ type MoveToRequest =
   }
 
 encodeMoveToRequest ∷ MoveToRequest → Json
-encodeMoveToRequest r = J.encodeJson $ SM.fromFoldable
+encodeMoveToRequest r = J.encodeJson $ FO.fromFoldable
   [ Tuple "element" $ case r.element of
        Nothing → J.jsonNull
        Just el → J.encodeJson $ un Element el

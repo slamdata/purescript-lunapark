@@ -105,7 +105,7 @@ type Error =
   }
 
 fromJson ∷ J.Json → Error
-fromJson js = either unknownError id do
+fromJson js = either unknownError identity do
   obj ← J.decodeJson js
   value ← obj J..? "value"
   error ← fromStringCode =<< value J..? "error"

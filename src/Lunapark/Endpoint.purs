@@ -7,7 +7,7 @@ module Lunapark.Endpoint where
 
 import Prelude
 
-import Control.Monad.Aff (Aff)
+import Effect.Aff (Aff)
 import Data.Argonaut (Json)
 import Data.Argonaut as J
 import Data.Bifunctor (lmap)
@@ -18,7 +18,6 @@ import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
 import Lunapark.Error as LE
 import Lunapark.Types as LT
-import Network.HTTP.Affjax (AJAX)
 import Network.HTTP.Affjax as N
 import Network.HTTP.StatusCode (StatusCode(..))
 
@@ -173,14 +172,14 @@ handleAPIError r = case r.status of
     obj J..? "value"
   code → Left $ LE.fromJson r.response
 
-get ∷ ∀ e. String → Endpoint → Aff (ajax ∷ AJAX|e) (Either LE.Error Json)
+get ∷ String → Endpoint → Aff (Either LE.Error Json)
 get uri ep  = map handleAPIError $ N.get (uri <> print ep)
 
-post ∷ ∀ e. String → Endpoint → Json → Aff (ajax ∷ AJAX|e) (Either LE.Error Json)
+post ∷ String → Endpoint → Json → Aff (Either LE.Error Json)
 post uri ep obj = map handleAPIError $ N.post (uri <> print ep) obj
 
-post_ ∷ ∀ e. String → Endpoint → Aff (ajax ∷ AJAX|e) (Either LE.Error Json)
+post_ ∷ String → Endpoint → Aff (Either LE.Error Json)
 post_ uri ep = map handleAPIError $ N.post' (uri <> print ep) (Nothing ∷ Maybe Unit)
 
-delete ∷ ∀ e. String → Endpoint → Aff (ajax ∷ AJAX|e) (Either LE.Error Json)
+delete ∷ String → Endpoint → Aff (Either LE.Error Json)
 delete uri ep = map handleAPIError $ N.delete (uri <> print ep)

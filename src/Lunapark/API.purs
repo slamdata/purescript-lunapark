@@ -2,10 +2,6 @@ module Lunapark.API where
 
 import Prelude
 
-import Control.Monad.Aff as Aff
-import Control.Monad.Aff.Class (class MonadAff, liftAff)
-import Control.Monad.Eff.Ref as Ref
-import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Rec.Class (class MonadRec)
 import Data.Argonaut as J
 import Data.Bifunctor (lmap)
@@ -14,37 +10,33 @@ import Data.List (List(..), (:))
 import Data.List as L
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
-import Data.StrMap as SM
 import Data.String as Str
-import Data.Variant as V
 import Data.Time.Duration (Milliseconds(..))
 import Data.Traversable as T
+import Data.Variant as V
+import Effect.Aff as Aff
+import Effect.Aff.Class (class MonadAff, liftAff)
+import Effect.Class (liftEffect)
+import Effect.Ref as Ref
+import Foreign.Object as FO
+import Lunapark.ActionF (_lunaparkActions, LUNAPARK_ACTIONS, ActionF(..), TouchF(..))
 import Lunapark.Endpoint as LP
 import Lunapark.Error as LE
-import Lunapark.Types as LT
 import Lunapark.LunaparkF (_lunapark, LUNAPARK, ElementF(..), LunaparkF(..), performActions, findElement)
-import Lunapark.ActionF (_lunaparkActions, LUNAPARK_ACTIONS, ActionF(..), TouchF(..))
+import Lunapark.Types as LT
 import Lunapark.Utils (liftAndRethrow, throwLeft, catch)
-import Network.HTTP.Affjax (AJAX)
 import Node.Buffer as B
 import Node.FS.Aff as FS
 import Run as R
 import Run.Except (EXCEPT)
 
-type LunaparkEffects e =
-  ( ajax ∷ AJAX
-  , ref ∷ Ref.REF
-  , buffer ∷ B.BUFFER
-  , fs ∷ FS.FS
-  | e)
-
 init
-  ∷ ∀ e m r a
-  . MonadAff (LunaparkEffects e) m
+  ∷ ∀ m r a
+  . MonadAff m
   ⇒ MonadRec m
   ⇒ String
   → LT.CapabilitiesRequest
-  → m (Either LE.Error (Lunapark e r a → BaseRun e r a))
+  → m (Either LE.Error (Lunapark r a → BaseRun r a))
 init uri caps = do
   res ←
     liftAff
@@ -58,19 +50,19 @@ init uri caps = do
 
   T.for sessionResponse \{ session, capabilities } → do
     timeoutsRef ←
-      liftEff $ Ref.newRef
+      liftEffect $ Ref.new
         { implicit: Milliseconds 0.0
         , pageLoad: Milliseconds 300000.0
         , script: Milliseconds 30000.0
         }
 
-    requestMapRef ← liftEff $ Ref.newRef Map.empty
+    requestMapRef ← liftEffect $ Ref.new Map.empty
 
     actionsEnabled ←
       map isRight
         $ liftAff
         $ LP.post uri  (LP.InSession session : LP.Actions : Nil)
-        $ LT.encodeActionRequest $ SM.singleton "action-test"
+        $ LT.encodeActionRequest $ FO.singleton "action-test"
         $ LT.NoSource [ LT.pause $ Milliseconds 0.0 ]
 
     let
@@ -86,40 +78,40 @@ init uri caps = do
     pure $ interpret input
 
 interpret
-  ∷ ∀ e r
+  ∷ ∀ r
   . HandleLunaparkInput
-  → Lunapark e r
-  ~> BaseRun e r
+  → Lunapark r
+  ~> BaseRun r
 interpret input = runLunapark input <<< runLunaparkActions input
 
 
-type Lunapark e r = BaseRun e (lunapark ∷ LUNAPARK, lunaparkActions ∷ LUNAPARK_ACTIONS|r)
+type Lunapark r = BaseRun (lunapark ∷ LUNAPARK, lunaparkActions ∷ LUNAPARK_ACTIONS|r)
 
-type BaseRun e r = R.Run
+type BaseRun r = R.Run
   ( except ∷ EXCEPT LE.Error
-  , aff ∷ R.AFF (LunaparkEffects e)
-  , eff ∷ R.EFF (LunaparkEffects e)
+  , aff ∷ R.AFF
+  , effect ∷ R.EFFECT
   | r)
 
-runLunapark ∷ ∀ e r. HandleLunaparkInput → BaseRun e (lunapark ∷ LUNAPARK|r) ~> BaseRun e r
+runLunapark ∷ ∀ r. HandleLunaparkInput → BaseRun (lunapark ∷ LUNAPARK|r) ~> BaseRun r
 runLunapark input = do
   R.interpretRec (R.on _lunapark (handleLunapark input) R.send)
 
-runLunaparkActions ∷ ∀ e r. HandleLunaparkInput → Lunapark e r ~> BaseRun e (lunapark ∷ LUNAPARK|r)
+runLunaparkActions ∷ ∀ r. HandleLunaparkInput → Lunapark r ~> BaseRun (lunapark ∷ LUNAPARK|r)
 runLunaparkActions input
   | input.actionsEnabled = interpretW3CActions Nil
   | otherwise = R.interpretRec (R.on _lunaparkActions (jsonWireActions input) R.send)
 
 interpretW3CActions
-  ∷ ∀ e r
+  ∷ ∀ r
   . List LT.ActionSequence
-  → Lunapark e r
-  ~> BaseRun e (lunapark ∷ LUNAPARK|r)
+  → Lunapark r
+  ~> BaseRun (lunapark ∷ LUNAPARK|r)
 interpretW3CActions acc as = case R.peel as of
   Left la → case tag la of
     Left a → w3cActions acc interpretW3CActions a
     Right others → do
-      T.for_ (L.reverse acc) \s → performActions $ SM.singleton "dummy" s
+      T.for_ (L.reverse acc) \s → performActions $ FO.singleton "dummy" s
       cont ← R.send others
       interpretW3CActions Nil cont
   Right a → pure a
@@ -127,14 +119,14 @@ interpretW3CActions acc as = case R.peel as of
   tag = R.on _lunaparkActions Left Right
 
 w3cActions
-  ∷ ∀ e r a
+  ∷ ∀ r a
   . List LT.ActionSequence
   → ( List LT.ActionSequence
-    → Lunapark e r
-    ~> BaseRun e (lunapark ∷ LUNAPARK|r)
+    → Lunapark r
+    ~> BaseRun (lunapark ∷ LUNAPARK|r)
     )
-  → ActionF (Lunapark e r a)
-  → BaseRun e (lunapark ∷ LUNAPARK|r) a
+  → ActionF (Lunapark r a)
+  → BaseRun (lunapark ∷ LUNAPARK|r) a
 w3cActions acc loop = case _ of
   Click btn next →
     let seq = [ LT.pointerDown btn, LT.pointerUp btn ]
@@ -219,7 +211,7 @@ type HandleLunaparkInput =
   , actionsEnabled ∷ Boolean
   }
 
-jsonWireActions ∷ ∀ e r. HandleLunaparkInput → ActionF ~> BaseRun e (lunapark ∷ LUNAPARK|r)
+jsonWireActions ∷ ∀ r. HandleLunaparkInput → ActionF ~> BaseRun (lunapark ∷ LUNAPARK|r)
 jsonWireActions inp = case _ of
   Click btn next → do
     _ ← post (LP.Click : Nil) (LT.encodeButton btn)
@@ -290,7 +282,7 @@ jsonWireActions inp = case _ of
   inSession ∷ LP.EndpointPart
   inSession = LP.InSession inp.session
 
-handleLunapark ∷ ∀ e r. HandleLunaparkInput → LunaparkF ~> BaseRun e r
+handleLunapark ∷ ∀ r. HandleLunaparkInput → LunaparkF ~> BaseRun r
 handleLunapark inp = case _ of
   Quit next → do
     _ ← delete $ inSession : Nil
@@ -300,10 +292,10 @@ handleLunapark inp = case _ of
     ss ← throwLeft $ LT.decodeServerStatus res
     pure $ cont ss
   GetTimeouts cont → do
-    res ← R.liftEff $ Ref.readRef inp.timeoutsRef
+    res ← R.liftEffect $ Ref.read inp.timeoutsRef
     pure $ cont res
   SetTimeouts ts next → do
-    R.liftEff $ Ref.writeRef inp.timeoutsRef ts
+    R.liftEffect $ Ref.write ts inp.timeoutsRef
     withFallback "set timeouts"
       { w3c: void $ post (inSession : LP.Timeouts : Nil) (LT.encodeTimeouts ts)
       , jsonWire: do
@@ -435,7 +427,7 @@ handleLunapark inp = case _ of
   Screenshot fp next → do
     res ← get (inSession : LP.Screenshot : Nil)
     screenshotPack ← throwLeft $ LT.decodeScreenshot res
-    buffer ← R.liftEff $ B.fromString screenshotPack.content screenshotPack.encoding
+    buffer ← R.liftEffect $ B.fromString screenshotPack.content screenshotPack.encoding
     R.liftAff $ FS.writeFile fp buffer
     pure next
   FindElement loc cont → do
@@ -468,7 +460,7 @@ handleLunapark inp = case _ of
       ScreenshotEl fp next → do
         res ← get (inSession : inElement : LP.Screenshot : Nil)
         screenshotPack ← throwLeft $ LT.decodeScreenshot res
-        buffer ← R.liftEff $ B.fromString screenshotPack.content screenshotPack.encoding
+        buffer ← R.liftEffect $ B.fromString screenshotPack.content screenshotPack.encoding
         R.liftAff $ FS.writeFile fp buffer
         pure next
       IsSelected cont → do
@@ -518,7 +510,7 @@ handleLunapark inp = case _ of
                      { script: """var el = arguments[0]; return el.offsetHeight > 0 && el.offsetWidth > 0"""
                      , args: [ LT.encodeElement el ]
                      }
-               handleLunapark inp $ ExecuteScript script id
+               handleLunapark inp $ ExecuteScript script identity
           }
         map cont $ throwLeft $ J.decodeJson res
       Submit next → do
@@ -531,9 +523,9 @@ handleLunapark inp = case _ of
   get a = liftAndRethrow $ LP.get inp.uri a
   post_ a = liftAndRethrow $ LP.post_ inp.uri a
 
-  withFallback ∷ ∀ a. String → { w3c ∷ BaseRun e r a, jsonWire ∷ BaseRun e r a } → BaseRun e r a
+  withFallback ∷ ∀ a. String → { w3c ∷ BaseRun r a, jsonWire ∷ BaseRun r a } → BaseRun r a
   withFallback key { w3c: try, jsonWire: fallback } = do
-    mp ← R.liftEff $ Ref.readRef inp.requestMapRef
+    mp ← R.liftEffect $ Ref.read inp.requestMapRef
     case Map.lookup key mp of
       Just true → try
       Just false → fallback
@@ -541,11 +533,11 @@ handleLunapark inp = case _ of
         let
           try' = do
             a ← try
-            R.liftEff $ Ref.modifyRef inp.requestMapRef (Map.insert key true)
+            R.liftEffect $ Ref.modify (Map.insert key true) inp.requestMapRef
             pure a
           fallback' = do
             a ← fallback
-            R.liftEff $ Ref.modifyRef inp.requestMapRef (Map.insert key false)
+            R.liftEffect $ Ref.modify (Map.insert key false) inp.requestMapRef
             pure a
         in catch try' \_ → fallback'
 

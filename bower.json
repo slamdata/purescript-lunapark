@@ -24,11 +24,11 @@
     "test"
   ],
   "dependencies": {
-    "purescript-affjax": "^5.0.0",
-    "purescript-argonaut": "^3.1.0",
-    "purescript-css": "^3.4.0",
-    "purescript-node-fs-aff": "^5.0.0",
-    "purescript-run": "^1.0.1",
-    "purescript-xpath": "cryogenian/purescript-xpath#master"
+    "purescript-affjax": "#compiler/0.12",
+    "purescript-argonaut": "cryogenian/purescript-argonaut#compiler/0.12",
+    "purescript-css": "justinwoo/purescript-css#compiler/0.12",
+    "purescript-node-fs-aff": "#compiler/0.12",
+    "purescript-run": "#compiler/0.12",
+    "purescript-xpath": "cryogenian/purescript-xpath#compiler/0.12"
   }
 }

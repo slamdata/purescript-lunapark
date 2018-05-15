@@ -11,7 +11,7 @@
   "dependencies": {
     "chromedriver": "^2.37.0",
     "pulp": "^12.0.1",
-    "purescript": "^0.11.7",
+    "purescript": "cryogenian/node-purescript-bin#master",
     "purescript-psa": "^0.6.0",
     "xhr2": "^0.1.4"
   }

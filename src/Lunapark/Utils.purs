@@ -2,7 +2,7 @@ module Lunapark.Utils where
 
 import Prelude
 
-import Control.Monad.Aff (Aff)
+import Effect.Aff (Aff)
 import Data.Bifunctor (lmap)
 import Data.Either (Either)
 import Lunapark.Error as LE
@@ -11,9 +11,9 @@ import Run.Except as RE
 import Unsafe.Coerce (unsafeCoerce)
 
 liftAndRethrow
-  ∷ ∀ e r ε ω
-  . Aff e (Either ε ω)
-  → R.Run (aff ∷ R.AFF e, except ∷ RE.EXCEPT ε|r) ω
+  ∷ ∀ r ε ω
+  . Aff (Either ε ω)
+  → R.Run (aff ∷ R.AFF, except ∷ RE.EXCEPT ε|r) ω
 liftAndRethrow a = do
   res ← R.liftAff a
   RE.rethrow res
