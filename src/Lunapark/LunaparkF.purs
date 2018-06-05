@@ -2,7 +2,7 @@ module Lunapark.LunaparkF where
 
 import Prelude
 
-import Data.Argonaut as J
+import Data.Argonaut.Core as J
 import Data.Symbol (SProxy(..))
 import Lunapark.Types as LT
 import Run as R

@@ -2,16 +2,15 @@
   "name": "purescript-lunapark",
   "private": true,
   "scripts": {
-    "build": "pulp build -- --censor-lib --strict --stash",
+    "build": "pulp build -- --strict --stash",
     "build:non-strict": "pulp build",
-    "bundle": "purs bundle \"output/**/*.js\" --output ./index.js --main Main --module Main",
     "ide": "purs ide server"
   },
   "license": "Apache-2.0",
   "dependencies": {
     "chromedriver": "^2.37.0",
-    "pulp": "^12.0.1",
-    "purescript": "cryogenian/node-purescript-bin#master",
+    "pulp": "^12.2.0",
+    "purescript": "slamdata/node-purescript#0.12",
     "purescript-psa": "^0.6.0",
     "xhr2": "^0.1.4"
   }

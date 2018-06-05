@@ -8,8 +8,12 @@ import Prelude
 import CSS.Render as CSSR
 import CSS.Selector as CSS
 import Control.Alt ((<|>))
-import Data.Argonaut (Json, (.?))
-import Data.Argonaut as J
+import Data.Argonaut.Core (Json)
+import Data.Argonaut.Core as J
+import Data.Argonaut.Decode.Class (class DecodeJson, decodeJson) as J
+import Data.Argonaut.Decode.Combinators ((.?))
+import Data.Argonaut.Encode.Class (class EncodeJson, encodeJson) as J
+import Data.Argonaut.Encode.Combinators (extend) as J
 import Data.Array as A
 import Data.Either (Either(..))
 import Data.Map as Map

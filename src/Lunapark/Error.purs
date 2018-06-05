@@ -2,7 +2,9 @@ module Lunapark.Error where
 
 import Prelude
 
-import Data.Argonaut as J
+import Data.Argonaut.Core as J
+import Data.Argonaut.Decode.Combinators ((.?)) as J
+import Data.Argonaut.Decode.Class (decodeJson) as J
 import Data.Either (Either(..), either)
 
 data ErrorType

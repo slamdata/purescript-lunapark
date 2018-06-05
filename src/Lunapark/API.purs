@@ -3,14 +3,14 @@ module Lunapark.API where
 import Prelude
 
 import Control.Monad.Rec.Class (class MonadRec)
-import Data.Argonaut as J
+import Data.Argonaut.Decode.Class as J
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), isRight)
 import Data.List (List(..), (:))
 import Data.List as L
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
-import Data.String as Str
+import Data.String.CodeUnits as Str
 import Data.Time.Duration (Milliseconds(..))
 import Data.Traversable as T
 import Data.Variant as V
@@ -533,11 +533,11 @@ handleLunapark inp = case _ of
         let
           try' = do
             a ← try
-            R.liftEffect $ Ref.modify (Map.insert key true) inp.requestMapRef
+            R.liftEffect $ Ref.modify_ (Map.insert key true) inp.requestMapRef
             pure a
           fallback' = do
             a ← fallback
-            R.liftEffect $ Ref.modify (Map.insert key false) inp.requestMapRef
+            R.liftEffect $ Ref.modify_ (Map.insert key false) inp.requestMapRef
             pure a
         in catch try' \_ → fallback'
 
