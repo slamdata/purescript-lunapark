@@ -1,3 +1,8 @@
+# purescript-lunapark
+
+[![Latest release](http://img.shields.io/github/release/slamdata/purescript-lunapark.svg)](https://github.com/slamdata/purescript-lunapark/releases)
+[![Build status](https://travis-ci.org/slamdata/purescript-lunapark.svg?branch=master)](https://travis-ci.org/slamdata/purescript-lunapark)
+
 ## Disclaimer
 
 + This is WIP: some things weren't implemented, some might have bugs. Filling issues and prs are welcomed!
