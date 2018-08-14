@@ -27,7 +27,7 @@
     "purescript-xpath": "cryogenian/purescript-xpath#compiler/0.12",
     "purescript-argonaut-core": "^4.0.0",
     "purescript-argonaut-codecs": "^4.0.0",
-    "purescript-affjax": "^6.0.0",
+    "purescript-affjax": "^7.0.0",
     "purescript-css": "^4.0.0",
     "purescript-node-fs-aff": "^6.0.0",
     "purescript-run": "cryogenian/purescript-run#compiler/0.12"

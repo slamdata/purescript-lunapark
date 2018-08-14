@@ -7,22 +7,22 @@ module Lunapark.Endpoint where
 
 import Prelude
 
-import Effect.Aff (Aff)
+import Affjax as N
+import Affjax.RequestBody as NQ
+import Affjax.ResponseFormat as NR
+import Affjax.StatusCode (StatusCode(..))
 import Data.Argonaut.Core (Json)
-import Data.Argonaut.Decode.Combinators ((.?)) as J
 import Data.Argonaut.Decode.Class (decodeJson) as J
+import Data.Argonaut.Decode.Combinators ((.?)) as J
 import Data.Bifunctor (lmap)
-import Data.Either (Either(..))
+import Data.Either (Either(..), either)
 import Data.Foldable as F
 import Data.List as L
 import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
+import Effect.Aff (Aff)
 import Lunapark.Error as LE
 import Lunapark.Types as LT
-import Network.HTTP.Affjax.Response as NR
-import Network.HTTP.Affjax.Request as NQ
-import Network.HTTP.Affjax as N
-import Network.HTTP.StatusCode (StatusCode(..))
 
 data EndpointPart
   = Session
@@ -168,12 +168,15 @@ printPart = case _ of
   LongClick → "longclick"
   Flick → "flick"
 
-handleAPIError ∷ N.AffjaxResponse Json → Either LE.Error Json
+handleAPIError
+  ∷ N.Response (Either N.ResponseFormatError Json)
+  → Either LE.Error Json
 handleAPIError r = case r.status of
   StatusCode 200 → lmap LE.unknownError do
-    obj ← J.decodeJson r.response
+    obj ← J.decodeJson =<< lmap N.printResponseFormatError r.body
     obj J..? "value"
-  code → Left $ LE.fromJson r.response
+  code →
+    Left $ either (LE.unknownError <<< N.printResponseFormatError) LE.fromJson r.body
 
 get ∷ String → Endpoint → Aff (Either LE.Error Json)
 get uri ep  = map handleAPIError $ N.get NR.json (uri <> print ep)
