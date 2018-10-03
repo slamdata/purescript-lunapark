@@ -3,7 +3,10 @@ module Lunapark.API where
 import Prelude
 
 import Control.Monad.Rec.Class (class MonadRec)
-import Data.Argonaut.Decode.Class as J
+import Data.Argonaut.Decode.Class (decodeJson) as J
+import Data.Argonaut.Encode.Class (encodeJson) as J
+import Data.FoldableWithIndex as FI
+import Data.Array as A
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), isRight)
 import Data.List (List(..), (:))
@@ -205,7 +208,7 @@ w3cActions acc loop = case _ of
 type HandleLunaparkInput =
   { session ∷ LT.SessionId
   , timeoutsRef ∷ Ref.Ref LT.Timeouts
-  , requestMapRef ∷ Ref.Ref (Map.Map String Boolean)
+  , requestMapRef ∷ Ref.Ref (Map.Map String Int)
   , uri ∷ String
   , capabilities ∷ Array LT.Capability
   , actionsEnabled ∷ Boolean
@@ -296,12 +299,11 @@ handleLunapark inp = case _ of
     pure $ cont res
   SetTimeouts ts next → do
     R.liftEffect $ Ref.write ts inp.timeoutsRef
-    withFallback "set timeouts"
-      { w3c: void $ post (inSession : LP.Timeouts : Nil) (LT.encodeTimeouts ts)
-      , jsonWire: do
-           T.for_ (LT.encodeLegacyTimeouts ts) \j →
-             void $ post (inSession : LP.Timeouts : Nil) j
-      }
+    tryAndCache "set timeouts"
+      [ void $ post (inSession : LP.Timeouts : Nil) (LT.encodeTimeouts ts)
+      , do T.for_ (LT.encodeLegacyTimeouts ts) \j →
+           void $ post (inSession : LP.Timeouts : Nil) j
+      ]
     pure next
   GoTo uri next → do
     _ ← post (inSession : LP.Url : Nil) $ LT.encodeGoRequest uri
@@ -322,16 +324,16 @@ handleLunapark inp = case _ of
     res ← get (inSession : LP.Title : Nil)
     map cont $ throwLeft $ J.decodeJson res
   GetWindowHandle cont → do
-    res ← withFallback "get window handle"
-      { w3c: get (inSession : LP.Window : Nil)
-      , jsonWire: get (inSession : LP.WindowHandle : Nil)
-      }
+    res ← tryAndCache "get window handle"
+      [ get (inSession : LP.Window : Nil)
+      , get (inSession : LP.WindowHandle : Nil)
+      ]
     map cont $ throwLeft $ LT.decodeWindowHandle res
   GetWindowHandles cont → do
-    res ← withFallback "get window handles"
-      { w3c: get (inSession : LP.Window : LP.Handles : Nil)
-      , jsonWire: get (inSession : LP.WindowHandles : Nil)
-      }
+    res ← tryAndCache "get window handles"
+      [ get (inSession : LP.Window : LP.Handles : Nil)
+      , get (inSession : LP.WindowHandles : Nil)
+      ]
     map cont $ throwLeft $ T.traverse LT.decodeWindowHandle =<< J.decodeJson res
   CloseWindow next → do
     _ ← delete (inSession : LP.Window : Nil)
@@ -346,25 +348,21 @@ handleLunapark inp = case _ of
     _ ← post_ (inSession : LP.Frame : LP.Parent : Nil)
     pure next
   GetWindowRectangle cont → do
-    res ← withFallback "get window rectangle"
-      { w3c: do
-           res ← get (inSession : LP.Window : LP.Rect : Nil)
+    res ← tryAndCache "get window rectangle"
+      [ do res ← get (inSession : LP.Window : LP.Rect : Nil)
            throwLeft $ LT.decodeRectangle res
-      , jsonWire: do
-           position ← get (inSession : LP.Window : LP.Position : Nil)
+      , do position ← get (inSession : LP.Window : LP.Position : Nil)
            size ← get (inSession : LP.Window : LP.Size : Nil)
            throwLeft $ LT.decodeRectangleLegacy { position, size }
-      }
+      ]
     pure $ cont res
   SetWindowRectangle r next → do
-    withFallback "set window rectangle"
-      { w3c: do
-           void $ post (inSession : LP.Window : LP.Rect : Nil) (LT.encodeRectangle r)
-      , jsonWire: do
-           let js = LT.encodeRectangleLegacy r
+    tryAndCache "set window rectangle"
+      [ void $ post (inSession : LP.Window : LP.Rect : Nil) (LT.encodeRectangle r)
+      , do let js = LT.encodeRectangleLegacy r
            _ ← post (inSession : LP.Window : LP.Size : Nil) js.size
            void $ post (inSession : LP.Window : LP.Position : Nil) js.position
-      }
+      ]
     pure next
   MaximizeWindow next → do
     _ ← post_ (inSession : LP.Window : LP.Maximize : Nil)
@@ -376,15 +374,15 @@ handleLunapark inp = case _ of
     _ ← post_ (inSession : LP.Window : LP.Fullscreen : Nil)
     pure next
   ExecuteScript script cont → do
-    map cont $ withFallback "execute script"
-      { w3c: post (inSession : LP.Execute : LP.Sync : Nil) (LT.encodeScript script)
-      , jsonWire: post (inSession : LP.Execute : Nil) (LT.encodeScript script)
-      }
+    map cont $ tryAndCache "execute script"
+      [ post (inSession : LP.Execute : LP.Sync : Nil) (LT.encodeScript script)
+      , post (inSession : LP.Execute : Nil) (LT.encodeScript script)
+      ]
   ExecuteScriptAsync script cont → do
-    map cont $ withFallback "execute script async"
-      { w3c: post (inSession : LP.Execute : LP.Async : Nil) (LT.encodeScript script)
-      , jsonWire: post (inSession : LP.ExecuteAsync : Nil) (LT.encodeScript script)
-      }
+    map cont $ tryAndCache "execute script async"
+      [ post (inSession : LP.Execute : LP.Async : Nil) (LT.encodeScript script)
+      , post (inSession : LP.ExecuteAsync : Nil) (LT.encodeScript script)
+      ]
   GetAllCookies cont → do
     res ← get (inSession : LP.Cookies : Nil)
     map cont $ throwLeft $ T.traverse LT.decodeCookie =<< J.decodeJson res
@@ -401,28 +399,28 @@ handleLunapark inp = case _ of
     _ ← post (inSession : LP.Cookies : Nil) (LT.encodeCookie cookie)
     pure next
   DismissAlert next → do
-    _ ← withFallback "dismiss alert"
-      { w3c: post_ (inSession : LP.Alert : LP.Dismiss : Nil)
-      , jsonWire: post_ (inSession : LP.DismissAlert : Nil)
-      }
+    _ ← tryAndCache "dismiss alert"
+      [ post_ (inSession : LP.Alert : LP.Dismiss : Nil)
+      , post_ (inSession : LP.DismissAlert : Nil)
+      ]
     pure next
   AcceptAlert next → do
-    _ ← withFallback "accept alert"
-      { w3c: post_ (inSession : LP.Alert : LP.Accept : Nil)
-      , jsonWire: post_ (inSession : LP.AcceptAlert : Nil)
-      }
+    _ ← tryAndCache "accept alert"
+      [ post_ (inSession : LP.Alert : LP.Accept : Nil)
+      , post_ (inSession : LP.AcceptAlert : Nil)
+      ]
     pure next
   GetAlertText cont → do
-    res ← withFallback "get alert text"
-      { w3c: get (inSession : LP.Alert : LP.Text : Nil)
-      , jsonWire: get (inSession : LP.AlertText : Nil)
-      }
+    res ← tryAndCache "get alert text"
+      [ get (inSession : LP.Alert : LP.Text : Nil)
+      , get (inSession : LP.AlertText : Nil)
+      ]
     map cont $ throwLeft $ J.decodeJson res
   SendAlertText str next → do
-    _ ← withFallback "send alert text"
-      { w3c: post (inSession : LP.Alert : LP.Text : Nil) (LT.encodeSendKeysRequest str)
-      , jsonWire: post (inSession : LP.AlertText : Nil) (LT.encodeSendKeysRequest str)
-      }
+    _ ← tryAndCache "send alert text"
+      [ post (inSession : LP.Alert : LP.Text : Nil) (LT.encodeSendKeysRequest str)
+      , post (inSession : LP.AlertText : Nil) (LT.encodeSendKeysRequest str)
+      ]
     pure next
   Screenshot fp next → do
     res ← get (inSession : LP.Screenshot : Nil)
@@ -481,15 +479,13 @@ handleLunapark inp = case _ of
         res ← get (inSession : inElement : LP.Name : Nil)
         map cont $ throwLeft $ J.decodeJson res
       GetRectangle cont →
-        map cont $ withFallback "get element rectangle"
-          { w3c: do
-             res ← get (inSession : inElement : LP.Rect : Nil)
-             throwLeft $ LT.decodeRectangle res
-          , jsonWire: do
-             position ← get (inSession : inElement : LP.Position : Nil)
-             size ← get (inSession : inElement : LP.Size : Nil)
-             throwLeft $ LT.decodeRectangleLegacy { position, size }
-          }
+        map cont $ tryAndCache "get element rectangle"
+          [ do res ← get (inSession : inElement : LP.Rect : Nil)
+               throwLeft $ LT.decodeRectangle res
+          , do position ← get (inSession : inElement : LP.Position : Nil)
+               size ← get (inSession : inElement : LP.Size : Nil)
+               throwLeft $ LT.decodeRectangleLegacy { position, size }
+          ]
       IsEnabled cont → do
         res ← get (inSession : inElement : LP.Enabled : Nil)
         map cont $ throwLeft $ J.decodeJson res
@@ -500,18 +496,21 @@ handleLunapark inp = case _ of
         _ ← post_ (inSession : inElement : LP.Clear : Nil)
         pure next
       SendKeysEl txt next → do
-        _ ← post (inSession : inElement : LP.Value : Nil) (LT.encodeSendKeysRequest txt)
+        _ ← tryAndCache "send keys chromedriver hack"
+          [ post (inSession : inElement : LP.Value : Nil) (LT.encodeSendKeysRequest txt)
+          , post (inSession : inElement : LP.Value : Nil)
+              $ J.encodeJson $ FO.singleton "value" $ Str.toCharArray txt
+          ]
         pure next
       IsDisplayed cont → do
-        res ← withFallback "is element displayed"
-          { w3c: get (inSession : inElement : LP.Displayed : Nil)
-          , jsonWire: do
-               let script =
+        res ← tryAndCache "is element displayed"
+          [ get (inSession : inElement : LP.Displayed : Nil)
+          , do let script =
                      { script: """var el = arguments[0]; return el.offsetHeight > 0 && el.offsetWidth > 0"""
                      , args: [ LT.encodeElement el ]
                      }
                handleLunapark inp $ ExecuteScript script identity
-          }
+          ]
         map cont $ throwLeft $ J.decodeJson res
       Submit next → do
         _ ← post_ (inSession : inElement : LP.Submit : Nil)
@@ -523,23 +522,26 @@ handleLunapark inp = case _ of
   get a = liftAndRethrow $ LP.get inp.uri a
   post_ a = liftAndRethrow $ LP.post_ inp.uri a
 
-  withFallback ∷ ∀ a. String → { w3c ∷ BaseRun r a, jsonWire ∷ BaseRun r a } → BaseRun r a
-  withFallback key { w3c: try, jsonWire: fallback } = do
+  tryAndCache ∷ ∀ a. String → Array (BaseRun r a) → BaseRun r a
+  tryAndCache key actions = do
+    let emptyCases = throwLeft $ Left $ "No valid cases for " <> key <> " caching"
+    let incorrectCache = throwLeft $ Left $ "Fallback for " <> key <> " error"
+
     mp ← R.liftEffect $ Ref.read inp.requestMapRef
     case Map.lookup key mp of
-      Just true → try
-      Just false → fallback
+      Just ix → case A.index actions ix of
+        Just action → action
+        Nothing → incorrectCache
       Nothing →
         let
-          try' = do
-            a ← try
-            R.liftEffect $ Ref.modify_ (Map.insert key true) inp.requestMapRef
-            pure a
-          fallback' = do
-            a ← fallback
-            R.liftEffect $ Ref.modify_ (Map.insert key false) inp.requestMapRef
-            pure a
-        in catch try' \_ → fallback'
+          go ix acc act =
+            let try' = do
+                  a ← act
+                  R.liftEffect $ Ref.modify_ (Map.insert key ix) inp.requestMapRef
+                  pure a
+            in catch try' \_ → acc
+        in
+         FI.foldlWithIndex go emptyCases actions
 
   inSession ∷ LP.EndpointPart
   inSession = LP.InSession inp.session
