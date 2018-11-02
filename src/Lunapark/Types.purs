@@ -32,18 +32,30 @@ import Node.Encoding as NE
 import Node.Path (FilePath)
 
 newtype SessionId = SessionId String
+
 derive instance newtypeSessionId ∷ Newtype SessionId _
+derive newtype instance eqSessionId ∷ Eq SessionId
+derive newtype instance ordSessionId ∷ Ord SessionId
 
 newtype WindowHandle = WindowHandle String
+
 derive instance newtypeWindowHandle ∷ Newtype WindowHandle _
+derive newtype instance eqWindowHandle ∷ Eq WindowHandle
+derive newtype instance ordWindowHandle ∷ Ord WindowHandle
 
 currentWindow ∷ WindowHandle
 currentWindow = WindowHandle "current"
 
 data FrameId = ByElementId String | ByIndex Int | TopFrame
 
+derive instance eqFrameId ∷ Eq FrameId
+derive instance ordFrameId ∷ Ord FrameId
+
 newtype Element = Element String
-derive instance newtypeElementId ∷ Newtype Element _
+
+derive instance newtypeElement ∷ Newtype Element _
+derive newtype instance eqElement ∷ Eq Element
+derive newtype instance ordElement ∷ Ord Element
 
 decodeElement ∷ Json → Either String Element
 decodeElement = J.decodeJson >=> \obj →
