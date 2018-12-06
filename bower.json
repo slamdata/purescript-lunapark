@@ -21,7 +21,8 @@
     "node_modules",
     "bower_components",
     "output",
-    "test"
+    "test",
+    "vendor"
   ],
   "dependencies": {
     "purescript-xpath": "cryogenian/purescript-xpath#compiler/0.12",
