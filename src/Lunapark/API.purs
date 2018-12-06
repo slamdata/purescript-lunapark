@@ -33,13 +33,18 @@ import Node.FS.Aff as FS
 import Run as R
 import Run.Except (EXCEPT)
 
+newtype Interpreter r = Interpreter (Lunapark r ~> BaseRun r)
+
+runInterpreter ∷ ∀ r. Interpreter r → Lunapark r ~> BaseRun r
+runInterpreter (Interpreter f) = f
+
 init
-  ∷ ∀ m r a
+  ∷ ∀ m r
   . MonadAff m
   ⇒ MonadRec m
   ⇒ String
   → LT.CapabilitiesRequest
-  → m (Either LE.Error (Lunapark r a → BaseRun r a))
+  → m (Either LE.Error (Interpreter r))
 init uri caps = do
   res ←
     liftAff
@@ -78,7 +83,7 @@ init uri caps = do
         , actionsEnabled
         }
 
-    pure $ interpret input
+    pure $ Interpreter (interpret input)
 
 interpret
   ∷ ∀ r
