@@ -13,7 +13,7 @@ import Affjax.ResponseFormat as NR
 import Affjax.StatusCode (StatusCode(..))
 import Data.Argonaut.Core (Json)
 import Data.Argonaut.Decode.Class (decodeJson) as J
-import Data.Argonaut.Decode.Combinators ((.?)) as J
+import Data.Argonaut.Decode.Combinators ((.:)) as J
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), either)
 import Data.Foldable as F
@@ -174,7 +174,7 @@ handleAPIError
 handleAPIError r = case r.status of
   StatusCode 200 → lmap LE.unknownError do
     obj ← J.decodeJson =<< lmap N.printResponseFormatError r.body
-    obj J..? "value"
+    obj J..: "value"
   code →
     Left $ either (LE.unknownError <<< N.printResponseFormatError) LE.fromJson r.body
 
