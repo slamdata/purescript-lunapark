@@ -11,7 +11,7 @@ import Control.Alt ((<|>))
 import Data.Argonaut.Core (Json)
 import Data.Argonaut.Core (Json, jsonEmptyObject, jsonNull) as J
 import Data.Argonaut.Decode.Class (decodeJson) as J
-import Data.Argonaut.Decode.Combinators ((.?))
+import Data.Argonaut.Decode.Combinators ((.:))
 import Data.Argonaut.Encode.Class (class EncodeJson, encodeJson) as J
 import Data.Argonaut.Encode.Combinators (extend) as J
 import Data.Array as A
@@ -59,7 +59,7 @@ derive newtype instance ordElement ∷ Ord Element
 
 decodeElement ∷ Json → Either String Element
 decodeElement = J.decodeJson >=> \obj →
-  map Element $ obj .? "element-6066-11e4-a52e-4f735466cecf" <|> obj .? "ELEMENT"
+  map Element $ obj .: "element-6066-11e4-a52e-4f735466cecf" <|> obj .: "ELEMENT"
 
 encodeElement ∷ Element → Json
 encodeElement (Element eid) = J.encodeJson $ FO.fromFoldable
@@ -77,8 +77,8 @@ type CreateSessionResponse =
 
 decodeCreateSessionResponse ∷ Json → Either String CreateSessionResponse
 decodeCreateSessionResponse = J.decodeJson >=> \obj → do
-  session ← decodeSessionId =<< obj .? "sessionId"
-  capabilities ← decodeCapabilities =<< obj .? "capabilities"
+  session ← decodeSessionId =<< obj .: "sessionId"
+  capabilities ← decodeCapabilities =<< obj .: "capabilities"
   pure { session, capabilities }
 
 type ServerStatus =
@@ -87,7 +87,7 @@ type ServerStatus =
   }
 
 decodeServerStatus ∷ Json → Either String ServerStatus
-decodeServerStatus = J.decodeJson >=> \obj → { ready: _, message: _ } <$> obj .? "ready" <*> obj .? "message"
+decodeServerStatus = J.decodeJson >=> \obj → { ready: _, message: _ } <$> obj .: "ready" <*> obj .: "message"
 
 type Timeouts =
   { script ∷ Milliseconds
@@ -97,9 +97,9 @@ type Timeouts =
 
 decodeTimeouts ∷ Json → Either String Timeouts
 decodeTimeouts = J.decodeJson >=> \obj → do
-  script ← map Milliseconds $ obj .? "script"
-  pageLoad ← map Milliseconds $ obj .? "pageLoad"
-  implicit ← map Milliseconds $ obj .? "implicit"
+  script ← map Milliseconds $ obj .: "script"
+  pageLoad ← map Milliseconds $ obj .: "pageLoad"
+  implicit ← map Milliseconds $ obj .: "implicit"
   pure { script, pageLoad, implicit }
 
 encodeTimeouts ∷ Timeouts → Json
@@ -142,20 +142,20 @@ type Rectangle =
 
 decodeRectangle ∷ Json → Either String Rectangle
 decodeRectangle = J.decodeJson >=> \obj → do
-  width ← obj .? "width"
-  height ← obj .? "height"
-  x ← obj .? "x"
-  y ← obj .? "y"
+  width ← obj .: "width"
+  height ← obj .: "height"
+  x ← obj .: "x"
+  y ← obj .: "y"
   pure { width, height, x, y }
 
 decodeRectangleLegacy ∷ { size ∷ Json, position ∷ Json }  → Either String Rectangle
 decodeRectangleLegacy { size, position } = do
   sobj ← J.decodeJson size
   pobj ← J.decodeJson position
-  x ← pobj .? "x"
-  y ← pobj .? "y"
-  width ← sobj .? "width"
-  height ← sobj .? "height"
+  x ← pobj .: "x"
+  y ← pobj .: "y"
+  width ← sobj .: "width"
+  height ← sobj .: "height"
   pure { width, height, x, y }
 
 encodeRectangleLegacy ∷ Rectangle → { size ∷ Json, position ∷ Json }
@@ -254,13 +254,13 @@ encodeCookie r = J.encodeJson $ FO.fromFoldable
 
 decodeCookie ∷ Json → Either String Cookie
 decodeCookie = J.decodeJson >=> \obj → do
-  name ← obj .? "name"
-  value ← obj .? "value"
-  path ← maybify $ obj .? "path"
-  domain ← maybify $ obj .? "domain"
-  secure ← maybify $ obj .? "secure"
-  httpOnly ← maybify $ obj .? "httpOnly"
-  expiry ← maybify $ obj .? "expiry"
+  name ← obj .: "name"
+  value ← obj .: "value"
+  path ← maybify $ obj .: "path"
+  domain ← maybify $ obj .: "domain"
+  secure ← maybify $ obj .: "secure"
+  httpOnly ← maybify $ obj .: "httpOnly"
+  expiry ← maybify $ obj .: "expiry"
   pure
     { name
     , value

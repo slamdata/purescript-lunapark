@@ -3,7 +3,7 @@ module Lunapark.Error where
 import Prelude
 
 import Data.Argonaut.Core (Json) as J
-import Data.Argonaut.Decode.Combinators ((.?)) as J
+import Data.Argonaut.Decode.Combinators ((.:)) as J
 import Data.Argonaut.Decode.Class (decodeJson) as J
 import Data.Either (Either(..), either)
 
@@ -109,10 +109,10 @@ type Error =
 fromJson ∷ J.Json → Error
 fromJson js = either unknownError identity do
   obj ← J.decodeJson js
-  value ← obj J..? "value"
-  error ← fromStringCode =<< value J..? "error"
-  message ← value J..? "message"
-  stacktrace ← value J..? "stacktrace"
+  value ← obj J..: "value"
+  error ← fromStringCode =<< value J..: "error"
+  message ← value J..: "message"
+  stacktrace ← value J..: "stacktrace"
   pure { error, message, stacktrace }
 
 unknownError ∷ String → Error
