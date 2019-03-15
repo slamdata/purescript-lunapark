@@ -6,7 +6,6 @@
 ## Disclaimer
 
 + This is WIP: some things weren't implemented, some might have bugs. Filling issues and prs are welcomed!
-+ All files in `vendor` folders: three drivers and selenium jar -- are subjects of appropriate copyrights.
 
 ## Purescript W3C webdriver protocol bindings
 
