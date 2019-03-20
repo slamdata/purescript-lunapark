@@ -30,7 +30,6 @@
     "purescript-argonaut-core": "^5.0.0",
     "purescript-css": "^4.0.0",
     "purescript-node-fs-aff": "^6.0.0",
-    "purescript-run": "^3.0.0",
-    "purescript-xpath": "cryogenian/purescript-xpath#compiler/0.12"
+    "purescript-run": "^3.0.0"
   }
 }

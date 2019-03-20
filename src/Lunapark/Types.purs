@@ -5,8 +5,7 @@ module Lunapark.Types where
 
 import Prelude
 
-import CSS.Render as CSSR
-import CSS.Selector as CSS
+import CSS as CSS
 import Control.Alt ((<|>))
 import Data.Argonaut.Core (Json)
 import Data.Argonaut.Core (Json, jsonEmptyObject, jsonNull) as J
@@ -25,8 +24,6 @@ import Data.Time.Duration (Milliseconds(..))
 import Data.Traversable as F
 import Data.Tuple (Tuple(..))
 import Data.Variant as V
-import Data.XPath.AST as XA
-import Data.XPath.Printer (printSelector)
 import Foreign.Object as FO
 import Node.Encoding as NE
 import Node.Path (FilePath)
@@ -174,7 +171,7 @@ encodeRectangle r = J.encodeJson $ FO.fromFoldable
 
 data Locator
   = ByCss CSS.Selector
-  | ByXPath XA.Selector
+  | ByXPath String
   | ByTagName String
   | ByLinkText String
   | ByPartialLinkText String
@@ -189,11 +186,11 @@ encodeLocator ∷ Locator → Json
 encodeLocator l = J.encodeJson $ FO.fromFoldable case l of
   ByCss sel →
     [ Tuple "using" "css selector"
-    , Tuple "value" $ CSSR.selector sel
+    , Tuple "value" $ CSS.selector sel
     ]
-  ByXPath sel →
+  ByXPath expr →
     [ Tuple "using" "xpath"
-    , Tuple "value" $ printSelector sel
+    , Tuple "value" expr
     ]
   ByLinkText sel →
     [ Tuple "using" "link text"
