@@ -306,8 +306,7 @@ handleLunapark inp = case _ of
     R.liftEffect $ Ref.write ts inp.timeoutsRef
     tryAndCache "set timeouts"
       [ void $ post (inSession : LP.Timeouts : Nil) (LT.encodeTimeouts ts)
-      , do T.for_ (LT.encodeLegacyTimeouts ts) \j →
-           void $ post (inSession : LP.Timeouts : Nil) j
+      , T.for_ (LT.encodeLegacyTimeouts ts) (post (inSession : LP.Timeouts : Nil))
       ]
     pure next
   GoTo uri next → do
