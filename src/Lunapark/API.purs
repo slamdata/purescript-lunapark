@@ -494,10 +494,16 @@ handleLunapark inp = case _ of
         res ← get (inSession : inElement : LP.Enabled : Nil)
         map cont $ throwLeft $ J.decodeJson res
       ClickEl next → do
-        _ ← post_ (inSession : inElement : LP.Click : Nil)
+        _ ← tryAndCache "chromedriver75 update clickElement"
+          [ post_ (inSession : inElement : LP.Click : Nil)
+          , post (inSession : inElement : LP.Click : Nil) $ LT.encodeElement el
+          ]
         pure next
       ClearEl next → do
-        _ ← post_ (inSession : inElement : LP.Clear : Nil)
+        _ ← tryAndCache "chromedriver75 update clearElement"
+          [ post_ (inSession : inElement : LP.Clear : Nil)
+          , post (inSession : inElement : LP.Click : Nil) $ LT.encodeElement el
+          ]
         pure next
       SendKeysEl txt next → do
         _ ← tryAndCache "send keys chromedriver hack"
@@ -517,7 +523,10 @@ handleLunapark inp = case _ of
           ]
         map cont $ throwLeft $ J.decodeJson res
       Submit next → do
-        _ ← post_ (inSession : inElement : LP.Submit : Nil)
+        _ ← tryAndCache "chromedriver75 update submit form"
+          [ post_ (inSession : inElement : LP.Submit : Nil)
+          , post (inSession: inElement : LP.Submit : Nil) $ LT.encodeElement el
+          ]
         pure next
 
   where
