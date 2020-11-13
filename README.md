@@ -17,7 +17,7 @@ won't involve any JavaScript dependencies.
 + There is a module that encodes any possible error returned by Selenium.
 + Low-level API uses `purescript-argonaut`'s `Json` type and `purescript-affjax`s helper functions (`get`, `post` etc)
 + Endpoints are constructed using `Endpoint@Lunapark.Endpoint` type. This module also provides helper functions
-returning `Aff _ (Either Error Json)`
+returning `Aff (Either Error Json)`
 + Types of requests and resposes live in `Lunapark.Types` module.
 + High-level API uses `purescript-run`. There are several functors, but the main two are: `LunaparkF` and `ActionF`.
 This functor embed in `Run` encode almost all posible interactions with w3c/selenium server.
@@ -26,7 +26,7 @@ This functor embed in `Run` encode almost all posible interactions with w3c/sele
 + `Lunapark` is facade library on top of api, functors and error.
 + Capabilities are represented via gradually typed datastructure `Array Capability`. `init` function takes a record
 `{ alwaysMatch: Array Capability, firstMatch: Array (Array Capability) }`. `firstMatch` must have at least on array.
-+ To construct interpreter you need call `init@Lunapark.API`. The result would be `Aff _ (Either Error Interpreter)`,
++ To construct interpreter you need call `init@Lunapark.API`. The result would be `Aff (Either Error Interpreter)`,
 where `Interpreter` is function taking `Lunapark` monad and unwrapping it into `Run` with `EXCEPT` and `AFF|EFF`. E.g.
 
 ```purescript
