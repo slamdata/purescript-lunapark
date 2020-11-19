@@ -5,6 +5,7 @@ import Prelude
 import Data.Argonaut.Core as J
 import Data.Symbol (SProxy(..))
 import Lunapark.Types as LT
+import Run (Run)
 import Run as R
 
 data LunaparkF a
@@ -71,167 +72,166 @@ derive instance functorElementF ∷ Functor ElementF
 
 _lunapark = SProxy ∷ SProxy "lunapark"
 type LUNAPARK = R.FProxy LunaparkF
-type WithLunapark r a = R.Run (lunapark ∷ LUNAPARK|r) a
+type LunaparkEffect r = ( lunapark ∷ LUNAPARK | r )
 
-
-liftLunapark ∷ ∀ a r. LunaparkF a → WithLunapark r a
+liftLunapark ∷ ∀ a r. LunaparkF a → Run (LunaparkEffect r) a
 liftLunapark = R.lift _lunapark
 
-quit ∷ ∀ r. WithLunapark r Unit
+quit ∷ ∀ r. Run (LunaparkEffect r) Unit
 quit = liftLunapark $ Quit unit
 
-status ∷ ∀ r. WithLunapark r LT.ServerStatus
+status ∷ ∀ r. Run (LunaparkEffect r) LT.ServerStatus
 status = liftLunapark $ Status identity
 
-setTimeouts ∷ ∀ r. LT.Timeouts → WithLunapark r Unit
+setTimeouts ∷ ∀ r. LT.Timeouts → Run (LunaparkEffect r) Unit
 setTimeouts ts = liftLunapark $ SetTimeouts ts unit
 
-getTimeouts ∷ ∀ r. WithLunapark r LT.Timeouts
+getTimeouts ∷ ∀ r. Run (LunaparkEffect r) LT.Timeouts
 getTimeouts = liftLunapark $ GetTimeouts identity
 
-go ∷ ∀ r. String → WithLunapark r Unit
+go ∷ ∀ r. String → Run (LunaparkEffect r) Unit
 go uri = liftLunapark $ GoTo uri unit
 
-getUrl ∷ ∀ r. WithLunapark r String
+getUrl ∷ ∀ r. Run (LunaparkEffect r) String
 getUrl = liftLunapark $ GetUrl identity
 
-forward ∷ ∀ r. WithLunapark r Unit
+forward ∷ ∀ r. Run (LunaparkEffect r) Unit
 forward = liftLunapark $ Forward unit
 
-back ∷ ∀ r. WithLunapark r Unit
+back ∷ ∀ r. Run (LunaparkEffect r) Unit
 back = liftLunapark $ Back unit
 
-refresh ∷ ∀ r. WithLunapark r Unit
+refresh ∷ ∀ r. Run (LunaparkEffect r) Unit
 refresh = liftLunapark $ Refresh unit
 
-getTitle ∷ ∀ r. WithLunapark r String
+getTitle ∷ ∀ r. Run (LunaparkEffect r) String
 getTitle = liftLunapark $ GetTitle identity
 
-getWindowHandle ∷ ∀ r. WithLunapark r LT.WindowHandle
+getWindowHandle ∷ ∀ r. Run (LunaparkEffect r) LT.WindowHandle
 getWindowHandle = liftLunapark $ GetWindowHandle identity
 
-getWindowHandles ∷ ∀ r. WithLunapark r (Array LT.WindowHandle)
+getWindowHandles ∷ ∀ r. Run (LunaparkEffect r) (Array LT.WindowHandle)
 getWindowHandles = liftLunapark $ GetWindowHandles identity
 
-closeWindow ∷ ∀ r. WithLunapark r Unit
+closeWindow ∷ ∀ r. Run (LunaparkEffect r) Unit
 closeWindow = liftLunapark $ CloseWindow unit
 
-switchToWindow ∷ ∀ r. LT.WindowHandle → WithLunapark r Unit
+switchToWindow ∷ ∀ r. LT.WindowHandle → Run (LunaparkEffect r) Unit
 switchToWindow w = liftLunapark $ SwitchToWindow w unit
 
-switchToFrame ∷ ∀ r. LT.FrameId → WithLunapark r Unit
+switchToFrame ∷ ∀ r. LT.FrameId → Run (LunaparkEffect r) Unit
 switchToFrame f = liftLunapark $ SwitchToFrame f unit
 
-switchToParentFrame ∷ ∀ r. WithLunapark r Unit
+switchToParentFrame ∷ ∀ r. Run (LunaparkEffect r) Unit
 switchToParentFrame = liftLunapark $ SwitchToParentFrame unit
 
-getWindowRectangle ∷ ∀ r. WithLunapark r LT.Rectangle
+getWindowRectangle ∷ ∀ r. Run (LunaparkEffect r) LT.Rectangle
 getWindowRectangle = liftLunapark $ GetWindowRectangle identity
 
-setWindowRectangle ∷ ∀ r. LT.Rectangle → WithLunapark r Unit
+setWindowRectangle ∷ ∀ r. LT.Rectangle → Run (LunaparkEffect r) Unit
 setWindowRectangle r = liftLunapark $ SetWindowRectangle r unit
 
-maximizeWindow ∷ ∀ r. WithLunapark r Unit
+maximizeWindow ∷ ∀ r. Run (LunaparkEffect r) Unit
 maximizeWindow = liftLunapark $ MaximizeWindow unit
 
-minimizeWindow ∷ ∀ r. WithLunapark r Unit
+minimizeWindow ∷ ∀ r. Run (LunaparkEffect r) Unit
 minimizeWindow = liftLunapark $ MinimizeWindow unit
 
-fullscreenWindow ∷ ∀ r. WithLunapark r Unit
+fullscreenWindow ∷ ∀ r. Run (LunaparkEffect r) Unit
 fullscreenWindow = liftLunapark $ FullscreenWindow unit
 
-executeScript ∷ ∀ r. LT.Script → WithLunapark r J.Json
+executeScript ∷ ∀ r. LT.Script → Run (LunaparkEffect r) J.Json
 executeScript script = liftLunapark $ ExecuteScript script identity
 
-executeScriptAsync ∷ ∀ r. LT.Script → WithLunapark r J.Json
+executeScriptAsync ∷ ∀ r. LT.Script → Run (LunaparkEffect r) J.Json
 executeScriptAsync script = liftLunapark $ ExecuteScriptAsync script identity
 
-getAllCookies ∷ ∀ r. WithLunapark r (Array LT.Cookie)
+getAllCookies ∷ ∀ r. Run (LunaparkEffect r) (Array LT.Cookie)
 getAllCookies = liftLunapark $ GetAllCookies identity
 
-getCookie ∷ ∀ r. String → WithLunapark r LT.Cookie
+getCookie ∷ ∀ r. String → Run (LunaparkEffect r) LT.Cookie
 getCookie name = liftLunapark $ GetCookie name identity
 
-addCookie ∷ ∀ r. LT.Cookie → WithLunapark r Unit
+addCookie ∷ ∀ r. LT.Cookie → Run (LunaparkEffect r) Unit
 addCookie cookie = liftLunapark $ AddCookie cookie unit
 
-deleteCookie ∷ ∀ r. String → WithLunapark r Unit
+deleteCookie ∷ ∀ r. String → Run (LunaparkEffect r) Unit
 deleteCookie name = liftLunapark $ DeleteCookie name unit
 
-deleteAllCookies ∷ ∀ r. WithLunapark r Unit
+deleteAllCookies ∷ ∀ r. Run (LunaparkEffect r) Unit
 deleteAllCookies = liftLunapark $ DeleteAllCookies unit
 
-dismissAlert ∷ ∀ r. WithLunapark r Unit
+dismissAlert ∷ ∀ r. Run (LunaparkEffect r) Unit
 dismissAlert = liftLunapark $ DismissAlert unit
 
-acceptAlert ∷ ∀ r. WithLunapark r Unit
+acceptAlert ∷ ∀ r. Run (LunaparkEffect r) Unit
 acceptAlert = liftLunapark $ AcceptAlert unit
 
-getAlertText ∷ ∀ r. WithLunapark r String
+getAlertText ∷ ∀ r. Run (LunaparkEffect r) String
 getAlertText = liftLunapark $ GetAlertText identity
 
-sendAlertText ∷ ∀ r. String → WithLunapark r Unit
+sendAlertText ∷ ∀ r. String → Run (LunaparkEffect r) Unit
 sendAlertText txt = liftLunapark $ SendAlertText txt unit
 
-screenshot ∷ ∀ r. String → WithLunapark r Unit
+screenshot ∷ ∀ r. String → Run (LunaparkEffect r) Unit
 screenshot fp = liftLunapark $ Screenshot fp unit
 
-elementScreenshot ∷ ∀ r. LT.Element → String → WithLunapark r Unit
+elementScreenshot ∷ ∀ r. LT.Element → String → Run (LunaparkEffect r) Unit
 elementScreenshot el fp = liftLunapark $ OnElement el $ ScreenshotEl fp unit
 
-findElement ∷ ∀ r. LT.Locator → WithLunapark r LT.Element
+findElement ∷ ∀ r. LT.Locator → Run (LunaparkEffect r) LT.Element
 findElement l = liftLunapark $ FindElement l identity
 
-findElements ∷ ∀ r. LT.Locator → WithLunapark r (Array LT.Element)
+findElements ∷ ∀ r. LT.Locator → Run (LunaparkEffect r) (Array LT.Element)
 findElements l = liftLunapark $ FindElements l identity
 
-childElement ∷ ∀ r. LT.Element → LT.Locator → WithLunapark r LT.Element
+childElement ∷ ∀ r. LT.Element → LT.Locator → Run (LunaparkEffect r) LT.Element
 childElement el l = liftLunapark $ OnElement el $ ChildElement l identity
 
-childElements ∷ ∀ r. LT.Element → LT.Locator → WithLunapark r (Array LT.Element)
+childElements ∷ ∀ r. LT.Element → LT.Locator → Run (LunaparkEffect r) (Array LT.Element)
 childElements el l = liftLunapark $ OnElement el $ ChildElements l identity
 
-isSelected ∷ ∀ r. LT.Element → WithLunapark r Boolean
+isSelected ∷ ∀ r. LT.Element → Run (LunaparkEffect r) Boolean
 isSelected el = liftLunapark $ OnElement el $ IsSelected identity
 
-getAttribute ∷ ∀ r. LT.Element → String → WithLunapark r String
+getAttribute ∷ ∀ r. LT.Element → String → Run (LunaparkEffect r) String
 getAttribute el name = liftLunapark $ OnElement el $ GetAttribute name identity
 
-getProperty ∷ ∀ r. LT.Element → String → WithLunapark r J.Json
+getProperty ∷ ∀ r. LT.Element → String → Run (LunaparkEffect r) J.Json
 getProperty el name = liftLunapark $ OnElement el $ GetProperty name identity
 
-getCss ∷ ∀ r. LT.Element → String → WithLunapark r String
+getCss ∷ ∀ r. LT.Element → String → Run (LunaparkEffect r) String
 getCss el name = liftLunapark $ OnElement el $ GetCss name identity
 
-getText ∷ ∀ r. LT.Element → WithLunapark r String
+getText ∷ ∀ r. LT.Element → Run (LunaparkEffect r) String
 getText el = liftLunapark $ OnElement el $ GetText identity
 
-getTagName ∷ ∀ r. LT.Element → WithLunapark r String
+getTagName ∷ ∀ r. LT.Element → Run (LunaparkEffect r) String
 getTagName el = liftLunapark $ OnElement el $ GetTagName identity
 
-getRectangle ∷ ∀ r. LT.Element → WithLunapark r LT.Rectangle
+getRectangle ∷ ∀ r. LT.Element → Run (LunaparkEffect r) LT.Rectangle
 getRectangle el = liftLunapark $ OnElement el $ GetRectangle identity
 
-isEnabled ∷ ∀ r. LT.Element → WithLunapark r Boolean
+isEnabled ∷ ∀ r. LT.Element → Run (LunaparkEffect r) Boolean
 isEnabled el = liftLunapark $ OnElement el $ IsEnabled identity
 
-clickElement ∷ ∀ r. LT.Element → WithLunapark r Unit
+clickElement ∷ ∀ r. LT.Element → Run (LunaparkEffect r) Unit
 clickElement el = liftLunapark $ OnElement el $ ClickEl unit
 
-clearElement ∷ ∀ r. LT.Element → WithLunapark r Unit
+clearElement ∷ ∀ r. LT.Element → Run (LunaparkEffect r) Unit
 clearElement el = liftLunapark $ OnElement el $ ClearEl unit
 
-sendKeysElement ∷ ∀ r. LT.Element → String → WithLunapark r Unit
+sendKeysElement ∷ ∀ r. LT.Element → String → Run (LunaparkEffect r) Unit
 sendKeysElement el txt = liftLunapark $ OnElement el $ SendKeysEl txt unit
 
-isDisplayed ∷ ∀ r. LT.Element → WithLunapark r Boolean
+isDisplayed ∷ ∀ r. LT.Element → Run (LunaparkEffect r) Boolean
 isDisplayed el = liftLunapark $ OnElement el $ IsDisplayed identity
 
-submitElement ∷ ∀ r. LT.Element → WithLunapark r Unit
+submitElement ∷ ∀ r. LT.Element → Run (LunaparkEffect r) Unit
 submitElement el = liftLunapark $ OnElement el $ Submit unit
 
-performActions ∷ ∀ r. LT.ActionRequest → WithLunapark r Unit
+performActions ∷ ∀ r. LT.ActionRequest → Run (LunaparkEffect r) Unit
 performActions req = liftLunapark $ PerformActions req unit
 
-releaseActions ∷ ∀ r. WithLunapark r Unit
+releaseActions ∷ ∀ r. Run (LunaparkEffect r) Unit
 releaseActions = liftLunapark $ ReleaseActions unit

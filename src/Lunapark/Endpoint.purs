@@ -3,7 +3,14 @@
 -- | So, to have something like `/session/:sessId/element/:elId/doubleclick` we have
 -- | `InSession sessId : InElement elId : DoubleClick : Nil`
 -- | This is not as typesafe as it could be, but at least it saves from typos.
-module Lunapark.Endpoint where
+module Lunapark.Endpoint
+  ( delete
+  , get
+  , post
+  , post'
+  , EndpointPart(..)
+  )
+  where
 
 import Prelude
 
@@ -23,6 +30,7 @@ import Data.Newtype (un)
 import Effect.Aff (Aff)
 import Lunapark.Error as LE
 import Lunapark.Types as LT
+import Lunapark.WebDriverError as LWE
 
 data EndpointPart
   = Session
@@ -169,23 +177,24 @@ printPart = case _ of
   Flick → "flick"
 
 handleAPIError
-  ∷ N.Response (Either N.ResponseFormatError Json)
+  ∷ Either N.Error (N.Response Json)
   → Either LE.Error Json
-handleAPIError r = case r.status of
-  StatusCode 200 → lmap LE.unknownError do
-    obj ← J.decodeJson =<< lmap N.printResponseFormatError r.body
+handleAPIError (Left error) = Left $ LE.AffjaxError error
+handleAPIError (Right r) = case r.status of
+  StatusCode 200 → lmap LE.JsonDecodeError do
+    obj ← J.decodeJson r.body
     obj J..: "value"
   code →
-    Left $ either (LE.unknownError <<< N.printResponseFormatError) LE.fromJson r.body
+    Left $ either LE.JsonDecodeError LE.WebDriverError $ LWE.fromJson r.body
 
 get ∷ String → Endpoint → Aff (Either LE.Error Json)
 get uri ep  = map handleAPIError $ N.get NR.json (uri <> print ep)
 
 post ∷ String → Endpoint → Json → Aff (Either LE.Error Json)
-post uri ep obj = map handleAPIError $ N.post NR.json (uri <> print ep) $ NQ.json obj
+post uri ep obj = map handleAPIError $ N.post NR.json (uri <> print ep) $ Just (NQ.json obj)
 
-post_ ∷ String → Endpoint → Aff (Either LE.Error Json)
-post_ uri ep = map handleAPIError $ N.post' NR.json (uri <> print ep) Nothing
+post' ∷ String → Endpoint → Aff (Either LE.Error Json)
+post' uri ep = map handleAPIError $ N.post NR.json (uri <> print ep) Nothing
 
 delete ∷ String → Endpoint → Aff (Either LE.Error Json)
 delete uri ep = map handleAPIError $ N.delete NR.json (uri <> print ep)

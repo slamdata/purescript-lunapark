@@ -22,20 +22,25 @@ import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Class (liftEffect)
 import Effect.Ref as Ref
 import Foreign.Object as FO
-import Lunapark.ActionF (_lunaparkActions, LUNAPARK_ACTIONS, ActionF(..), TouchF(..))
+import Lunapark.ActionF (_lunaparkActions, ActionF(..), TouchF(..), ActionsEffect)
 import Lunapark.Endpoint as LP
 import Lunapark.Error as LE
-import Lunapark.LunaparkF (_lunapark, LUNAPARK, ElementF(..), LunaparkF(..), performActions, findElement)
+import Lunapark.LunaparkF (_lunapark, ElementF(..), LunaparkF(..), LunaparkEffect, performActions, findElement)
 import Lunapark.Types as LT
-import Lunapark.Utils (liftAndRethrow, throwLeft, catch)
+import Lunapark.Utils (liftAndRethrow, rethrowAsJsonDecodeError, catch)
 import Node.Buffer as B
 import Node.FS.Aff as FS
+import Run (Run)
 import Run as R
 import Run.Except (EXCEPT)
+import Type.Row (type (+))
+import Run.Except as RE
 
-newtype Interpreter r = Interpreter (Lunapark r ~> BaseRun r)
+type Lunapark r a = Run (BaseEffects + LunaparkEffect + ActionsEffect + r) a
 
-runInterpreter ∷ ∀ r. Interpreter r → Lunapark r ~> BaseRun r
+newtype Interpreter r = Interpreter (Run (BaseEffects + LunaparkEffect + ActionsEffect + r) ~> Run (BaseEffects r))
+
+runInterpreter ∷ ∀ r. Interpreter r → Run (BaseEffects + LunaparkEffect + ActionsEffect + r) ~> Run (BaseEffects r)
 runInterpreter (Interpreter f) = f
 
 init
@@ -54,7 +59,7 @@ init uri caps = do
   let
     sessionResponse = do
       sessObj ← res
-      lmap LE.unknownError $ LT.decodeCreateSessionResponse sessObj
+      lmap LE.JsonDecodeError $ LT.decodeCreateSessionResponse sessObj
 
   T.for sessionResponse \{ session, capabilities } → do
     timeoutsRef ←
@@ -88,24 +93,24 @@ init uri caps = do
 interpret
   ∷ ∀ r
   . HandleLunaparkInput
-  → Lunapark r
-  ~> BaseRun r
+  → Run (BaseEffects + LunaparkEffect + ActionsEffect + r )
+  ~> Run (BaseEffects r)
 interpret input = runLunapark input <<< runLunaparkActions input
 
-
-type Lunapark r = BaseRun (lunapark ∷ LUNAPARK, lunaparkActions ∷ LUNAPARK_ACTIONS|r)
-
-type BaseRun r = R.Run
+type BaseEffects r =
   ( except ∷ EXCEPT LE.Error
   , aff ∷ R.AFF
   , effect ∷ R.EFFECT
   | r)
 
-runLunapark ∷ ∀ r. HandleLunaparkInput → BaseRun (lunapark ∷ LUNAPARK|r) ~> BaseRun r
+runLunapark ∷ ∀ r. HandleLunaparkInput → Run (BaseEffects + LunaparkEffect + r) ~> Run (BaseEffects r)
 runLunapark input = do
   R.interpretRec (R.on _lunapark (handleLunapark input) R.send)
 
-runLunaparkActions ∷ ∀ r. HandleLunaparkInput → Lunapark r ~> BaseRun (lunapark ∷ LUNAPARK|r)
+runLunaparkActions
+  ∷ ∀ r. HandleLunaparkInput
+  → Run (BaseEffects + LunaparkEffect + ActionsEffect + r )
+  ~> Run (BaseEffects + LunaparkEffect + r)
 runLunaparkActions input
   | input.actionsEnabled = interpretW3CActions Nil
   | otherwise = R.interpretRec (R.on _lunaparkActions (jsonWireActions input) R.send)
@@ -113,8 +118,8 @@ runLunaparkActions input
 interpretW3CActions
   ∷ ∀ r
   . List LT.ActionSequence
-  → Lunapark r
-  ~> BaseRun (lunapark ∷ LUNAPARK|r)
+  → Run (BaseEffects + LunaparkEffect + ActionsEffect + r )
+  ~> Run (BaseEffects + LunaparkEffect + r )
 interpretW3CActions acc as = case R.peel as of
   Left la → case tag la of
     Left a → w3cActions acc interpretW3CActions a
@@ -130,11 +135,11 @@ w3cActions
   ∷ ∀ r a
   . List LT.ActionSequence
   → ( List LT.ActionSequence
-    → Lunapark r
-    ~> BaseRun (lunapark ∷ LUNAPARK|r)
+    → Run (BaseEffects + LunaparkEffect + ActionsEffect + r )
+    ~> Run (BaseEffects + LunaparkEffect + r)
     )
-  → ActionF (Lunapark r a)
-  → BaseRun (lunapark ∷ LUNAPARK|r) a
+  → ActionF (Run (BaseEffects + LunaparkEffect + ActionsEffect + r ) a)
+  → Run (BaseEffects + LunaparkEffect + r) a
 w3cActions acc loop = case _ of
   Click btn next →
     let seq = [ LT.pointerDown btn, LT.pointerUp btn ]
@@ -219,7 +224,7 @@ type HandleLunaparkInput =
   , actionsEnabled ∷ Boolean
   }
 
-jsonWireActions ∷ ∀ r. HandleLunaparkInput → ActionF ~> BaseRun (lunapark ∷ LUNAPARK|r)
+jsonWireActions ∷ ∀ r. HandleLunaparkInput → ActionF ~> Run (BaseEffects + LunaparkEffect + r)
 jsonWireActions inp = case _ of
   Click btn next → do
     _ ← post (LP.Click : Nil) (LT.encodeButton btn)
@@ -232,7 +237,7 @@ jsonWireActions inp = case _ of
     pure next
   DoubleClick btn next → do
     _ ← case btn of
-      LT.LeftBtn → post_ (LP.DoubleClick : Nil)
+      LT.LeftBtn → post' (LP.DoubleClick : Nil)
       other → do
         _ ← post (LP.Click : Nil) (LT.encodeButton btn)
         post (LP.Click : Nil) (LT.encodeButton btn)
@@ -253,16 +258,16 @@ jsonWireActions inp = case _ of
     pure next
   InTouch tch → case tch of
     Tap next → do
-      _ ← post_ (LP.Touch : LP.Click : Nil)
+      _ ← post' (LP.Touch : LP.Click : Nil)
       pure next
     TouchDown next → do
-      _ ← post_ (LP.Touch : LP.Down : Nil)
+      _ ← post' (LP.Touch : LP.Down : Nil)
       pure next
     TouchUp next → do
-      _ ← post_ (LP.Touch : LP.Up : Nil)
+      _ ← post' (LP.Touch : LP.Up : Nil)
       pure next
     LongClick next → do
-      _ ← post_ (LP.Touch : LP.LongClick : Nil)
+      _ ← post' (LP.Touch : LP.LongClick : Nil)
       pure next
     Flick move next → do
       element ← case move.origin of
@@ -281,23 +286,23 @@ jsonWireActions inp = case _ of
       _ ← post (LP.Touch : LP.Scroll : Nil) (LT.encodeMoveToRequest req)
       pure next
     DoubleTap next → do
-      _ ← post_ (LP.Touch : LP.DoubleClick : Nil)
+      _ ← post' (LP.Touch : LP.DoubleClick : Nil)
       pure next
   where
   post a b = liftAndRethrow $ LP.post inp.uri (inSession : a) b
-  post_ a = liftAndRethrow $ LP.post_ inp.uri (inSession : a)
+  post' a = liftAndRethrow $ LP.post' inp.uri (inSession : a)
 
   inSession ∷ LP.EndpointPart
   inSession = LP.InSession inp.session
 
-handleLunapark ∷ ∀ r. HandleLunaparkInput → LunaparkF ~> BaseRun r
+handleLunapark ∷ ∀ r. HandleLunaparkInput → LunaparkF ~> Run (BaseEffects r)
 handleLunapark inp = case _ of
   Quit next → do
     _ ← delete $ inSession : Nil
     pure next
   Status cont → do
     res ← get $ LP.Status : Nil
-    ss ← throwLeft $ LT.decodeServerStatus res
+    ss ← rethrowAsJsonDecodeError $ LT.decodeServerStatus res
     pure $ cont ss
   GetTimeouts cont → do
     res ← R.liftEffect $ Ref.read inp.timeoutsRef
@@ -314,31 +319,31 @@ handleLunapark inp = case _ of
     pure next
   GetUrl cont → do
     res ← get $ inSession : LP.Url : Nil
-    map cont $ throwLeft $ J.decodeJson res
+    map cont $ rethrowAsJsonDecodeError $ J.decodeJson res
   Back next → do
-    _ ← post_ (inSession : LP.Back : Nil)
+    _ ← post' (inSession : LP.Back : Nil)
     pure next
   Forward next → do
-    _ ← post_ (inSession : LP.Forward : Nil)
+    _ ← post' (inSession : LP.Forward : Nil)
     pure next
   Refresh next → do
-    _ ← post_ (inSession : LP.Refresh : Nil)
+    _ ← post' (inSession : LP.Refresh : Nil)
     pure next
   GetTitle cont → do
     res ← get (inSession : LP.Title : Nil)
-    map cont $ throwLeft $ J.decodeJson res
+    map cont $ rethrowAsJsonDecodeError $ J.decodeJson res
   GetWindowHandle cont → do
     res ← tryAndCache "get window handle"
       [ get (inSession : LP.Window : Nil)
       , get (inSession : LP.WindowHandle : Nil)
       ]
-    map cont $ throwLeft $ LT.decodeWindowHandle res
+    map cont $ rethrowAsJsonDecodeError $ LT.decodeWindowHandle res
   GetWindowHandles cont → do
     res ← tryAndCache "get window handles"
       [ get (inSession : LP.Window : LP.Handles : Nil)
       , get (inSession : LP.WindowHandles : Nil)
       ]
-    map cont $ throwLeft $ T.traverse LT.decodeWindowHandle =<< J.decodeJson res
+    map cont $ rethrowAsJsonDecodeError $ T.traverse LT.decodeWindowHandle =<< J.decodeJson res
   CloseWindow next → do
     _ ← delete (inSession : LP.Window : Nil)
     pure next
@@ -349,15 +354,15 @@ handleLunapark inp = case _ of
     _ ← post (inSession : LP.Frame : Nil) (LT.encodeFrameId fid)
     pure next
   SwitchToParentFrame next → do
-    _ ← post_ (inSession : LP.Frame : LP.Parent : Nil)
+    _ ← post' (inSession : LP.Frame : LP.Parent : Nil)
     pure next
   GetWindowRectangle cont → do
     res ← tryAndCache "get window rectangle"
       [ do res ← get (inSession : LP.Window : LP.Rect : Nil)
-           throwLeft $ LT.decodeRectangle res
+           rethrowAsJsonDecodeError $ LT.decodeRectangle res
       , do position ← get (inSession : LP.Window : LP.Position : Nil)
            size ← get (inSession : LP.Window : LP.Size : Nil)
-           throwLeft $ LT.decodeRectangleLegacy { position, size }
+           rethrowAsJsonDecodeError $ LT.decodeRectangleLegacy { position, size }
       ]
     pure $ cont res
   SetWindowRectangle r next → do
@@ -369,13 +374,13 @@ handleLunapark inp = case _ of
       ]
     pure next
   MaximizeWindow next → do
-    _ ← post_ (inSession : LP.Window : LP.Maximize : Nil)
+    _ ← post' (inSession : LP.Window : LP.Maximize : Nil)
     pure next
   MinimizeWindow next → do
-    _ ← post_ (inSession : LP.Window : LP.Minimize : Nil)
+    _ ← post' (inSession : LP.Window : LP.Minimize : Nil)
     pure next
   FullscreenWindow next → do
-    _ ← post_ (inSession : LP.Window : LP.Fullscreen : Nil)
+    _ ← post' (inSession : LP.Window : LP.Fullscreen : Nil)
     pure next
   ExecuteScript script cont → do
     map cont $ tryAndCache "execute script"
@@ -389,10 +394,10 @@ handleLunapark inp = case _ of
       ]
   GetAllCookies cont → do
     res ← get (inSession : LP.Cookies : Nil)
-    map cont $ throwLeft $ T.traverse LT.decodeCookie =<< J.decodeJson res
+    map cont $ rethrowAsJsonDecodeError $ T.traverse LT.decodeCookie =<< J.decodeJson res
   GetCookie name cont → do
     res ← get (inSession : LP.Cookie name : Nil)
-    map cont $ throwLeft $ LT.decodeCookie res
+    map cont $ rethrowAsJsonDecodeError $ LT.decodeCookie res
   DeleteAllCookies next → do
     _ ← delete (inSession : LP.Cookies : Nil)
     pure next
@@ -404,14 +409,14 @@ handleLunapark inp = case _ of
     pure next
   DismissAlert next → do
     _ ← tryAndCache "dismiss alert"
-      [ post_ (inSession : LP.Alert : LP.Dismiss : Nil)
-      , post_ (inSession : LP.DismissAlert : Nil)
+      [ post' (inSession : LP.Alert : LP.Dismiss : Nil)
+      , post' (inSession : LP.DismissAlert : Nil)
       ]
     pure next
   AcceptAlert next → do
     _ ← tryAndCache "accept alert"
-      [ post_ (inSession : LP.Alert : LP.Accept : Nil)
-      , post_ (inSession : LP.AcceptAlert : Nil)
+      [ post' (inSession : LP.Alert : LP.Accept : Nil)
+      , post' (inSession : LP.AcceptAlert : Nil)
       ]
     pure next
   GetAlertText cont → do
@@ -419,7 +424,7 @@ handleLunapark inp = case _ of
       [ get (inSession : LP.Alert : LP.Text : Nil)
       , get (inSession : LP.AlertText : Nil)
       ]
-    map cont $ throwLeft $ J.decodeJson res
+    map cont $ rethrowAsJsonDecodeError $ J.decodeJson res
   SendAlertText str next → do
     _ ← tryAndCache "send alert text"
       [ post (inSession : LP.Alert : LP.Text : Nil) (LT.encodeSendKeysRequest str)
@@ -428,19 +433,19 @@ handleLunapark inp = case _ of
     pure next
   Screenshot fp next → do
     res ← get (inSession : LP.Screenshot : Nil)
-    screenshotPack ← throwLeft $ LT.decodeScreenshot res
+    screenshotPack ← rethrowAsJsonDecodeError $ LT.decodeScreenshot res
     buffer ← R.liftEffect $ B.fromString screenshotPack.content screenshotPack.encoding
     R.liftAff $ FS.writeFile fp buffer
     pure next
   FindElement loc cont → do
     res ← post (inSession : LP.Element : Nil) (LT.encodeLocator loc)
-    map cont $ throwLeft $ LT.decodeElement res
+    map cont $ rethrowAsJsonDecodeError $ LT.decodeElement res
   FindElements loc cont → do
     res ← post (inSession : LP.Elements : Nil) (LT.encodeLocator loc)
-    map cont $ throwLeft $ T.traverse LT.decodeElement =<< J.decodeJson res
+    map cont $ rethrowAsJsonDecodeError $ T.traverse LT.decodeElement =<< J.decodeJson res
   GetActiveElement cont → do
     res ← get (inSession : LP.Element : LP.Active : Nil)
-    map cont $ throwLeft $ LT.decodeElement res
+    map cont $ rethrowAsJsonDecodeError $ LT.decodeElement res
   PerformActions req next → do
     when inp.actionsEnabled
       $ void $ post
@@ -455,53 +460,53 @@ handleLunapark inp = case _ of
     in case elF of
       ChildElement loc cont → do
         res ← post (inSession : inElement : LP.Element : Nil) (LT.encodeLocator loc)
-        map cont $ throwLeft $ LT.decodeElement res
+        map cont $ rethrowAsJsonDecodeError $ LT.decodeElement res
       ChildElements loc cont → do
         res ← post (inSession : inElement : LP.Elements : Nil) (LT.encodeLocator loc)
-        map cont $ throwLeft $ T.traverse LT.decodeElement =<< J.decodeJson res
+        map cont $ rethrowAsJsonDecodeError $ T.traverse LT.decodeElement =<< J.decodeJson res
       ScreenshotEl fp next → do
         res ← get (inSession : inElement : LP.Screenshot : Nil)
-        screenshotPack ← throwLeft $ LT.decodeScreenshot res
+        screenshotPack ← rethrowAsJsonDecodeError $ LT.decodeScreenshot res
         buffer ← R.liftEffect $ B.fromString screenshotPack.content screenshotPack.encoding
         R.liftAff $ FS.writeFile fp buffer
         pure next
       IsSelected cont → do
         res ← get (inSession : inElement : LP.Selected : Nil)
-        map cont $ throwLeft $ J.decodeJson res
+        map cont $ rethrowAsJsonDecodeError $ J.decodeJson res
       GetAttribute attr cont → do
         res ← get (inSession : inElement : LP.Attribute attr : Nil)
-        map cont $ throwLeft $ J.decodeJson res
+        map cont $ rethrowAsJsonDecodeError $ J.decodeJson res
       GetProperty prop cont → do
         map cont $ get (inSession : inElement : LP.Property prop : Nil)
       GetCss css cont → do
         res ← get (inSession : inElement : LP.CssValue css : Nil)
-        map cont $ throwLeft $ J.decodeJson res
+        map cont $ rethrowAsJsonDecodeError $ J.decodeJson res
       GetText cont → do
         res ← get (inSession : inElement : LP.Text : Nil)
-        map cont $ throwLeft $ J.decodeJson res
+        map cont $ rethrowAsJsonDecodeError $ J.decodeJson res
       GetTagName cont → do
         res ← get (inSession : inElement : LP.Name : Nil)
-        map cont $ throwLeft $ J.decodeJson res
+        map cont $ rethrowAsJsonDecodeError $ J.decodeJson res
       GetRectangle cont →
         map cont $ tryAndCache "get element rectangle"
           [ do res ← get (inSession : inElement : LP.Rect : Nil)
-               throwLeft $ LT.decodeRectangle res
+               rethrowAsJsonDecodeError $ LT.decodeRectangle res
           , do position ← get (inSession : inElement : LP.Position : Nil)
                size ← get (inSession : inElement : LP.Size : Nil)
-               throwLeft $ LT.decodeRectangleLegacy { position, size }
+               rethrowAsJsonDecodeError $ LT.decodeRectangleLegacy { position, size }
           ]
       IsEnabled cont → do
         res ← get (inSession : inElement : LP.Enabled : Nil)
-        map cont $ throwLeft $ J.decodeJson res
+        map cont $ rethrowAsJsonDecodeError $ J.decodeJson res
       ClickEl next → do
         _ ← tryAndCache "chromedriver75 update clickElement"
-          [ post_ (inSession : inElement : LP.Click : Nil)
+          [ post' (inSession : inElement : LP.Click : Nil)
           , post (inSession : inElement : LP.Click : Nil) $ LT.encodeElement el
           ]
         pure next
       ClearEl next → do
         _ ← tryAndCache "chromedriver75 update clearElement"
-          [ post_ (inSession : inElement : LP.Clear : Nil)
+          [ post' (inSession : inElement : LP.Clear : Nil)
           , post (inSession : inElement : LP.Click : Nil) $ LT.encodeElement el
           ]
         pure next
@@ -521,10 +526,10 @@ handleLunapark inp = case _ of
                      }
                handleLunapark inp $ ExecuteScript script identity
           ]
-        map cont $ throwLeft $ J.decodeJson res
+        map cont $ rethrowAsJsonDecodeError $ J.decodeJson res
       Submit next → do
         _ ← tryAndCache "chromedriver75 update submit form"
-          [ post_ (inSession : inElement : LP.Submit : Nil)
+          [ post' (inSession : inElement : LP.Submit : Nil)
           , post (inSession: inElement : LP.Submit : Nil) $ LT.encodeElement el
           ]
         pure next
@@ -533,18 +538,17 @@ handleLunapark inp = case _ of
   delete a = liftAndRethrow $ LP.delete inp.uri a
   post a b = liftAndRethrow $ LP.post inp.uri a b
   get a = liftAndRethrow $ LP.get inp.uri a
-  post_ a = liftAndRethrow $ LP.post_ inp.uri a
+  post' a = liftAndRethrow $ LP.post' inp.uri a
 
-  tryAndCache ∷ ∀ a. String → Array (BaseRun r a) → BaseRun r a
+  -- | It caches an index of an action that is valid for current webdriver implementation.
+  -- | So you don't need to search correct one by tring them each time
+  tryAndCache ∷ ∀ a. String → Array (Run (BaseEffects r) a) → Run (BaseEffects r) a
   tryAndCache key actions = do
-    let emptyCases = throwLeft $ Left $ "No valid cases for " <> key <> " caching"
-    let incorrectCache = throwLeft $ Left $ "Fallback for " <> key <> " error"
-
     mp ← R.liftEffect $ Ref.read inp.requestMapRef
     case Map.lookup key mp of
       Just ix → case A.index actions ix of
         Just action → action
-        Nothing → incorrectCache
+        Nothing → RE.throw $ LE.CachingError $ LE.IncorrectCache key
       Nothing →
         let
           go ix acc act =
@@ -554,7 +558,7 @@ handleLunapark inp = case _ of
                   pure a
             in catch try' \_ → acc
         in
-         FI.foldlWithIndex go emptyCases actions
+         FI.foldlWithIndex go (RE.throw $ LE.CachingError $ LE.EmptyCases key) actions
 
   inSession ∷ LP.EndpointPart
   inSession = LP.InSession inp.session
