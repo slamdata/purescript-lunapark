@@ -4,8 +4,8 @@ sudo: required
 node_js: stable
 install:
   - npm install
-  - npm install -g bower
-  - bower install --production
+  - npm install -g spago
+  - spago install
 script:
   - npm run -s build
 after_success:

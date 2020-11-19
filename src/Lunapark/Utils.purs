@@ -2,9 +2,10 @@ module Lunapark.Utils where
 
 import Prelude
 
-import Effect.Aff (Aff)
+import Data.Argonaut.Decode (JsonDecodeError) as J
 import Data.Bifunctor (lmap)
 import Data.Either (Either)
+import Effect.Aff (Aff)
 import Lunapark.Error as LE
 import Run as R
 import Run.Except as RE
@@ -18,12 +19,12 @@ liftAndRethrow a = do
   res ← R.liftAff a
   RE.rethrow res
 
-throwLeft
+rethrowAsJsonDecodeError
   ∷ ∀ r
-  . Either String
+  . Either J.JsonDecodeError
   ~> R.Run (except ∷ RE.EXCEPT LE.Error|r)
-throwLeft =
-  RE.rethrow <<< lmap LE.unknownError
+rethrowAsJsonDecodeError =
+  RE.rethrow <<< lmap LE.JsonDecodeError
 
 -- Safe, since we actually want handler and result have same rows not, remove except
 catch

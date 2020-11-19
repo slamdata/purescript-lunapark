@@ -5,6 +5,7 @@ import Prelude
 import Data.Symbol (SProxy(..))
 import Data.Time.Duration (Milliseconds)
 import Lunapark.Types as LT
+import Run (Run)
 import Run as R
 
 
@@ -32,49 +33,49 @@ derive instance functorTouchF ∷ Functor TouchF
 
 _lunaparkActions = SProxy ∷ SProxy "lunaparkActions"
 type LUNAPARK_ACTIONS = R.FProxy ActionF
-type WithAction r = R.Run (lunaparkActions ∷ LUNAPARK_ACTIONS|r) Unit
+type ActionsEffect r = ( lunaparkActions ∷ LUNAPARK_ACTIONS | r )
 
-liftAction ∷ ∀ r. ActionF Unit → WithAction r
+liftAction ∷ ∀ r. ActionF Unit → Run (ActionsEffect r) Unit
 liftAction = R.lift _lunaparkActions
 
-click ∷ ∀ r. LT.Button → WithAction r
+click ∷ ∀ r. LT.Button → Run (ActionsEffect r) Unit
 click btn = liftAction $ Click btn unit
 
-buttonDown ∷ ∀ r. LT.Button → WithAction r
+buttonDown ∷ ∀ r. LT.Button → Run (ActionsEffect r) Unit
 buttonDown btn = liftAction $ ButtonDown btn unit
 
-buttonUp ∷ ∀ r. LT.Button → WithAction r
+buttonUp ∷ ∀ r. LT.Button → Run (ActionsEffect r) Unit
 buttonUp btn = liftAction $ ButtonUp btn unit
 
-doubleClick ∷ ∀ r. LT.Button → WithAction r
+doubleClick ∷ ∀ r. LT.Button → Run (ActionsEffect r) Unit
 doubleClick btn = liftAction $ DoubleClick btn unit
 
-sendKeys ∷ ∀ r. String → WithAction r
+sendKeys ∷ ∀ r. String → Run (ActionsEffect r) Unit
 sendKeys txt = liftAction $ SendKeys txt unit
 
-moveTo ∷ ∀ r. LT.PointerMove → WithAction r
+moveTo ∷ ∀ r. LT.PointerMove → Run (ActionsEffect r) Unit
 moveTo move = liftAction $ MoveTo move unit
 
-pause ∷ ∀ r. Milliseconds → WithAction r
+pause ∷ ∀ r. Milliseconds → Run (ActionsEffect r) Unit
 pause ms = liftAction $ Pause ms unit
 
-tap ∷ ∀ r. WithAction r
+tap ∷ ∀ r. Run (ActionsEffect r) Unit
 tap = liftAction $ InTouch $ Tap unit
 
-touchDown ∷ ∀ r. WithAction r
+touchDown ∷ ∀ r. Run (ActionsEffect r) Unit
 touchDown = liftAction $ InTouch $ TouchDown unit
 
-touchUp ∷ ∀ r. WithAction r
+touchUp ∷ ∀ r. Run (ActionsEffect r) Unit
 touchUp = liftAction $ InTouch $ TouchUp unit
 
-longTap ∷ ∀ r. WithAction r
+longTap ∷ ∀ r. Run (ActionsEffect r) Unit
 longTap = liftAction $ InTouch $ LongClick unit
 
-flick ∷ ∀ r. LT.PointerMove → WithAction r
+flick ∷ ∀ r. LT.PointerMove → Run (ActionsEffect r) Unit
 flick move = liftAction $ InTouch $ Flick move unit
 
-scroll ∷ ∀ r. LT.PointerMove → WithAction r
+scroll ∷ ∀ r. LT.PointerMove → Run (ActionsEffect r) Unit
 scroll move = liftAction $ InTouch $ Scroll move unit
 
-doubleTap ∷ ∀ r. WithAction r
+doubleTap ∷ ∀ r. Run (ActionsEffect r) Unit
 doubleTap = liftAction $ InTouch $ DoubleTap unit
