@@ -2,16 +2,12 @@
   "name": "purescript-lunapark",
   "private": true,
   "scripts": {
-    "build": "spago build --purs-args '--censor-lib --strict'",
-    "build:non-strict": "spago build",
-    "ide": "purs ide server"
+    "build": "pulp build -- --censor-lib --strict"
   },
   "license": "Apache-2.0",
   "dependencies": {
-    "chromedriver": "^86.0.0",
     "pulp": "^15.0.0",
-    "purescript": "^0.13.8",
-    "purescript-psa": "^0.8.0",
-    "xhr2": "^0.2.0"
+    "purescript": "^0.14.2",
+    "purescript-psa": "^0.8.2"
   }
 }
