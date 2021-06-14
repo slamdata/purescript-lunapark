@@ -22,10 +22,10 @@ import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Class (liftEffect)
 import Effect.Ref as Ref
 import Foreign.Object as FO
-import Lunapark.ActionF (_lunaparkActions, ActionF(..), TouchF(..), ActionsEffect)
+import Lunapark.ActionF (_lunaparkActions, ActionF(..), TouchF(..), LUNAPARK_ACTIONS)
 import Lunapark.Endpoint as LP
 import Lunapark.Error as LE
-import Lunapark.LunaparkF (_lunapark, ElementF(..), LunaparkF(..), LunaparkEffect, performActions, findElement)
+import Lunapark.LunaparkF (_lunapark, ElementF(..), LunaparkF(..), LUNAPARK, performActions, findElement)
 import Lunapark.Types as LT
 import Lunapark.Utils (liftAndRethrow, rethrowAsJsonDecodeError, catch)
 import Node.Buffer as B
@@ -36,11 +36,11 @@ import Run.Except (EXCEPT)
 import Type.Row (type (+))
 import Run.Except as RE
 
-type Lunapark r a = Run (BaseEffects + LunaparkEffect + ActionsEffect + r) a
+type Lunapark r a = Run (BASE_EFFECTS + LUNAPARK + LUNAPARK_ACTIONS + r) a
 
-newtype Interpreter r = Interpreter (Run (BaseEffects + LunaparkEffect + ActionsEffect + r) ~> Run (BaseEffects r))
+newtype Interpreter r = Interpreter (Run (BASE_EFFECTS + LUNAPARK + LUNAPARK_ACTIONS + r) ~> Run (BASE_EFFECTS r))
 
-runInterpreter ∷ ∀ r. Interpreter r → Run (BaseEffects + LunaparkEffect + ActionsEffect + r) ~> Run (BaseEffects r)
+runInterpreter ∷ ∀ r. Interpreter r → Run (BASE_EFFECTS + LUNAPARK + LUNAPARK_ACTIONS + r) ~> Run (BASE_EFFECTS r)
 runInterpreter (Interpreter f) = f
 
 init
@@ -93,24 +93,20 @@ init uri caps = do
 interpret
   ∷ ∀ r
   . HandleLunaparkInput
-  → Run (BaseEffects + LunaparkEffect + ActionsEffect + r )
-  ~> Run (BaseEffects r)
+  → Run (BASE_EFFECTS + LUNAPARK + LUNAPARK_ACTIONS + r )
+  ~> Run (BASE_EFFECTS r)
 interpret input = runLunapark input <<< runLunaparkActions input
 
-type BaseEffects r =
-  ( except ∷ EXCEPT LE.Error
-  , aff ∷ R.AFF
-  , effect ∷ R.EFFECT
-  | r)
+type BASE_EFFECTS r = EXCEPT LE.Error + R.AFF + R.EFFECT + r
 
-runLunapark ∷ ∀ r. HandleLunaparkInput → Run (BaseEffects + LunaparkEffect + r) ~> Run (BaseEffects r)
+runLunapark ∷ ∀ r. HandleLunaparkInput → Run (BASE_EFFECTS + LUNAPARK + r) ~> Run (BASE_EFFECTS r)
 runLunapark input = do
   R.interpretRec (R.on _lunapark (handleLunapark input) R.send)
 
 runLunaparkActions
   ∷ ∀ r. HandleLunaparkInput
-  → Run (BaseEffects + LunaparkEffect + ActionsEffect + r )
-  ~> Run (BaseEffects + LunaparkEffect + r)
+  → Run (BASE_EFFECTS + LUNAPARK + LUNAPARK_ACTIONS + r )
+  ~> Run (BASE_EFFECTS + LUNAPARK + r)
 runLunaparkActions input
   | input.actionsEnabled = interpretW3CActions Nil
   | otherwise = R.interpretRec (R.on _lunaparkActions (jsonWireActions input) R.send)
@@ -118,8 +114,8 @@ runLunaparkActions input
 interpretW3CActions
   ∷ ∀ r
   . List LT.ActionSequence
-  → Run (BaseEffects + LunaparkEffect + ActionsEffect + r )
-  ~> Run (BaseEffects + LunaparkEffect + r )
+  → Run (BASE_EFFECTS + LUNAPARK + LUNAPARK_ACTIONS + r )
+  ~> Run (BASE_EFFECTS + LUNAPARK + r )
 interpretW3CActions acc as = case R.peel as of
   Left la → case tag la of
     Left a → w3cActions acc interpretW3CActions a
@@ -135,11 +131,11 @@ w3cActions
   ∷ ∀ r a
   . List LT.ActionSequence
   → ( List LT.ActionSequence
-    → Run (BaseEffects + LunaparkEffect + ActionsEffect + r )
-    ~> Run (BaseEffects + LunaparkEffect + r)
+    → Run (BASE_EFFECTS + LUNAPARK + LUNAPARK_ACTIONS + r )
+    ~> Run (BASE_EFFECTS + LUNAPARK + r)
     )
-  → ActionF (Run (BaseEffects + LunaparkEffect + ActionsEffect + r ) a)
-  → Run (BaseEffects + LunaparkEffect + r) a
+  → ActionF (Run (BASE_EFFECTS + LUNAPARK + LUNAPARK_ACTIONS + r ) a)
+  → Run (BASE_EFFECTS + LUNAPARK + r) a
 w3cActions acc loop = case _ of
   Click btn next →
     let seq = [ LT.pointerDown btn, LT.pointerUp btn ]
@@ -224,7 +220,7 @@ type HandleLunaparkInput =
   , actionsEnabled ∷ Boolean
   }
 
-jsonWireActions ∷ ∀ r. HandleLunaparkInput → ActionF ~> Run (BaseEffects + LunaparkEffect + r)
+jsonWireActions ∷ ∀ r. HandleLunaparkInput → ActionF ~> Run (BASE_EFFECTS + LUNAPARK + r)
 jsonWireActions inp = case _ of
   Click btn next → do
     _ ← post (LP.Click : Nil) (LT.encodeButton btn)
@@ -238,7 +234,7 @@ jsonWireActions inp = case _ of
   DoubleClick btn next → do
     _ ← case btn of
       LT.LeftBtn → post' (LP.DoubleClick : Nil)
-      other → do
+      _ → do
         _ ← post (LP.Click : Nil) (LT.encodeButton btn)
         post (LP.Click : Nil) (LT.encodeButton btn)
     pure next
@@ -295,7 +291,7 @@ jsonWireActions inp = case _ of
   inSession ∷ LP.EndpointPart
   inSession = LP.InSession inp.session
 
-handleLunapark ∷ ∀ r. HandleLunaparkInput → LunaparkF ~> Run (BaseEffects r)
+handleLunapark ∷ ∀ r. HandleLunaparkInput → LunaparkF ~> Run (BASE_EFFECTS r)
 handleLunapark inp = case _ of
   Quit next → do
     _ ← delete $ inSession : Nil
@@ -542,7 +538,7 @@ handleLunapark inp = case _ of
 
   -- | It caches an index of an action that is valid for current webdriver implementation.
   -- | So you don't need to search correct one by tring them each time
-  tryAndCache ∷ ∀ a. String → Array (Run (BaseEffects r) a) → Run (BaseEffects r) a
+  tryAndCache ∷ ∀ a. String → Array (Run (BASE_EFFECTS r) a) → Run (BASE_EFFECTS r) a
   tryAndCache key actions = do
     mp ← R.liftEffect $ Ref.read inp.requestMapRef
     case Map.lookup key mp of

@@ -184,7 +184,7 @@ handleAPIError (Right r) = case r.status of
   StatusCode 200 → lmap LE.JsonDecodeError do
     obj ← J.decodeJson r.body
     obj J..: "value"
-  code →
+  _ →
     Left $ either LE.JsonDecodeError LE.WebDriverError $ LWE.fromJson r.body
 
 get ∷ String → Endpoint → Aff (Either LE.Error Json)

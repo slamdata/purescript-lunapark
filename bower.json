@@ -25,11 +25,11 @@
     "vendor"
   ],
   "dependencies": {
-    "purescript-affjax": "^11.0.0",
-    "purescript-argonaut-codecs": "^7.0.0",
-    "purescript-argonaut-core": "^5.0.0",
-    "purescript-css": "^4.0.0",
-    "purescript-node-fs-aff": "^6.0.0",
-    "purescript-run": "^3.0.0"
+    "purescript-affjax": "^12.0.0",
+    "purescript-argonaut-codecs": "^8.1.0",
+    "purescript-argonaut-core": "^6.0.0",
+    "purescript-css": "^5.0.1",
+    "purescript-node-fs-aff": "^7.0.0",
+    "purescript-run": "^4.0.0"
   }
 }

@@ -1,8 +1,7 @@
 /.*
 !/.gitignore
-!/.travis.yml
+!/.github
 /bower_components/
 /node_modules/
 /output/
-/example/dist/test.js
 package-lock.json
